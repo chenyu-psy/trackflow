@@ -24,9 +24,10 @@ they become released code.
 Use these commands for local checks:
 
 ```bash
-uv run pytest
-uv run ruff check src tests
-uv run mkdocs build --strict
+uv sync --only-group dev --no-install-project
+PYTHONPATH=src uv run --no-sync pytest
+PYTHONPATH=src uv run --no-sync ruff check src tests
+PYTHONPATH=src uv run --no-sync mkdocs build --strict
 ```
 
 ## Release flow
@@ -41,9 +42,10 @@ Releases happen from `main`. A release should collect tested changes from
 5. Run local checks and build the package:
 
 ```bash
-uv run pytest
-uv run ruff check src tests
-uv run mkdocs build --strict
+uv sync --only-group dev --no-install-project
+PYTHONPATH=src uv run --no-sync pytest
+PYTHONPATH=src uv run --no-sync ruff check src tests
+PYTHONPATH=src uv run --no-sync mkdocs build --strict
 uv build
 ```
 
