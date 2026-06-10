@@ -65,6 +65,8 @@ Its transparent cross gap is not drawn as a background-colored mask, so it
 remains transparent on non-matching backgrounds.
 
 ::: trackflow.beh.stimuli.make_fixation
+    options:
+      heading_level: 4
 
 ## Custom Stimuli
 
@@ -91,3 +93,5 @@ can keep editing it directly before or during their ordinary PsychoPy trial
 code when the experiment design requires that flexibility.
 
 ::: trackflow.beh.stimuli.wrap_stimulus
+    options:
+      heading_level: 3
