@@ -3,7 +3,14 @@
 Behavior data helpers provide lightweight row views for completed raw screen
 rows and trial summary rows.
 
-::: trackflow.beh.data
+## Overview
+
+Timelines store completed rows in memory and can write raw JSONL or summary
+CSV files. `DataRows` is a small view object for filtering and converting
+completed rows.
+
+## Row Views
+
+::: trackflow.beh.data.DataRows
     options:
-      members:
-        - DataRows
+      heading_level: 3

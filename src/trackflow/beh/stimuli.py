@@ -15,10 +15,6 @@ from typing import Any, List, Optional, Sequence, Tuple
 Point = Tuple[float, float]
 
 __all__ = [
-    "FixationParams",
-    "FixationStim",
-    "Stimulus",
-    "Timing",
     "make_fixation",
     "wrap_stimulus",
 ]
@@ -192,7 +188,7 @@ def wrap_stimulus(
     start: Optional[float] = None,
     end: Optional[float] = None,
     label: Optional[str] = None,
-) -> Stimulus:
+) -> Any:
     """Wrap a native PsychoPy or custom stimulus with timing.
 
     Parameters
@@ -208,8 +204,9 @@ def wrap_stimulus(
 
     Returns
     -------
-    Stimulus
-        Timed wrapper around ``drawable``.
+    object
+        Timed drawable wrapper that can be passed to
+        ``beh.screens.make_screen(...)``.
 
     Examples
     --------
@@ -638,7 +635,7 @@ def make_fixation(
     start: Optional[float] = None,
     end: Optional[float] = None,
     label: Optional[str] = None,
-) -> Stimulus:
+) -> Any:
     """Create a timed fixed-ratio fixation stimulus.
 
     Parameters
@@ -665,15 +662,13 @@ def make_fixation(
 
     Returns
     -------
-    Stimulus
-        Timed wrapper around a ``FixationStim``. The drawing object is stored
-        as ``stim.drawable`` and editable settings are exposed through
-        ``stim.params``.
+    object
+        Timed drawable fixation wrapper that can be passed to
+        ``beh.screens.make_screen(...)``.
 
     Examples
     --------
     >>> fix = make_fixation(win, size=0.5, color="#FFFFFF", start=0, end=0.5)
-    >>> fix.params.size = 0.6
     >>> fix.draw()
     """
     fixation = FixationStim(

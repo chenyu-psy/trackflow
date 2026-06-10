@@ -23,8 +23,7 @@ consistent.
 The current public API is organized into four runtime areas:
 
 - `trackflow.beh` for behavior helpers organized into stimuli, screens,
-  timelines, trials, trial planning, data output, recovery, global researcher
-  keys, and preflight checks
+  trials, timelines, trial planning, and data output
 - `trackflow.gaze` for EyeLink setup, tracker wrappers, and gaze monitoring
 - `trackflow.eeg` for parallel-port marker senders and debug marker senders
 - `trackflow.sync` for explicit EEG and EyeLink sync records
