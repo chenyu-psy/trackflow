@@ -78,15 +78,41 @@ These types are not implemented yet. When added, each type should document its
 specific parameters below the common parameter contract rather than expanding
 the top-level behavior API.
 
-## Function Reference
+## Custom Stimuli
 
 Use `wrap_stimulus()` when you already have a PsychoPy stimulus or another
 object with a `draw()` method and only need `trackflow` to manage
-screen-relative visibility. The reference below intentionally lists only the
-current public helper functions; implementation classes are not expanded here.
+screen-relative visibility.
+
+```python
+from psychopy import visual
+from trackflow import beh
+
+text_stim = visual.TextStim(win, text="Ready?")
+ready_text = beh.stimuli.wrap_stimulus(
+    text_stim,
+    start=0.0,
+    end=1.0,
+    label="ready_text",
+)
+```
+
+Custom stimuli follow the same `start`, `end`, and `label` timing contract as
+built-in stimuli. The wrapped object remains a normal PsychoPy object; users
+can keep editing it directly before or during their ordinary PsychoPy trial
+code when the experiment design requires that flexibility.
+
+::: trackflow.beh.stimuli
+    options:
+      members:
+        - wrap_stimulus
+
+## Built-in Function Reference
+
+The reference below intentionally lists only current built-in helper functions.
+Implementation classes are not expanded here.
 
 ::: trackflow.beh.stimuli
     options:
       members:
         - make_fixation
-        - wrap_stimulus
