@@ -1,22 +1,14 @@
-"""Screen helpers for key-based behavior presentation.
-
-This module defines the smallest presentation unit used by the 0.1.0 behavior
-runtime. A ``Screen`` can be fixed-duration with no response, or it can collect
-one keyboard response after an optional response-start delay.
-"""
+"""Screen presentation unit used by behavior timelines."""
 
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from . import _psychopy
-
-
-__all__ = ["Screen", "make_screen"]
+from .. import _psychopy
 
 
 class Screen:
-    """One screen-level presentation and keyboard-response unit.
+    """One timeline-owned presentation and keyboard-response unit.
 
     Parameters
     ----------
@@ -38,15 +30,15 @@ class Screen:
     clear_events : bool, optional
         Whether keyboard events should be cleared before the screen starts.
     data : dict, optional
-        Screen-level fields copied into the returned screen row.
-    run_if, on_start, on_load, on_response, on_finish : callable, optional
-        Lifecycle hooks used by ``Trial`` and ``Timeline``. Hooks receive the
-        current run context and screen data row, except ``run_if`` which
-        receives only the context.
+        Screen-level fields copied into the returned raw screen row. Use this
+        for readable labels such as ``{"screen_name": "fixation"}``.
+    on_start, on_load, on_response, on_finish : callable, optional
+        Lifecycle hooks receiving ``RunContext`` and the current raw row.
 
     Examples
     --------
-    >>> screen = Screen(stimuli=[fix], duration=1.0, response="key", keys=["space"])
+    >>> timeline = setup_timeline(win=win)
+    >>> screen = timeline.make_screen(stimuli=[fix], duration=1.0, response="key", keys=["space"])
     """
 
     def __init__(
@@ -60,8 +52,6 @@ class Screen:
         end_on_response: bool = True,
         clear_events: bool = True,
         data: Optional[Dict[str, Any]] = None,
-        screen_name: Optional[str] = None,
-        run_if: Optional[Callable[[Any], bool]] = None,
         on_start: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
         on_load: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
         on_response: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
@@ -69,7 +59,7 @@ class Screen:
     ) -> None:
         """Create and validate one screen specification."""
         if choices is not None:
-            raise ValueError("button/clickable choices are not supported by trackflow.beh 0.1.0.")
+            raise ValueError("button/clickable choices are not supported by the current trackflow.beh runtime.")
         self.stimuli = _validate_stimuli(stimuli)
         self.duration = _validate_optional_duration(duration)
         self.response = _validate_response_mode(response)
@@ -78,8 +68,6 @@ class Screen:
         self.end_on_response = bool(end_on_response)
         self.clear_events = bool(clear_events)
         self.data = dict(data or {})
-        self.screen_name = screen_name
-        self.run_if = run_if
         self.on_start = on_start
         self.on_load = on_load
         self.on_response = on_response
@@ -100,14 +88,13 @@ class Screen:
         end_on_response: Optional[bool] = None,
         clear_events: Optional[bool] = None,
         data: Optional[Dict[str, Any]] = None,
-        screen_name: Optional[str] = None,
     ) -> None:
         """Update screen settings in place.
 
         Parameters
         ----------
         stimuli, duration, response, keys, response_start, end_on_response,
-        clear_events, data, screen_name : optional
+        clear_events, data : optional
             Screen settings to replace before a run starts. Omitted settings
             keep their current values.
 
@@ -133,8 +120,6 @@ class Screen:
             self.clear_events = bool(clear_events)
         if data is not None:
             self.data = dict(data)
-        if screen_name is not None:
-            self.screen_name = str(screen_name)
 
         if self.duration is None and self.response is None:
             raise ValueError("duration or response must be provided.")
@@ -150,6 +135,10 @@ class Screen:
     ) -> Dict[str, Any]:
         """Present this screen and return one raw screen row.
 
+        This is a low-level method. It returns a raw row but does not write to
+        timeline records. Ordinary experiment scripts should call
+        ``timeline.run(screen)``.
+
         Parameters
         ----------
         win : psychopy.visual.Window
@@ -157,7 +146,7 @@ class Screen:
         screen_index : int, optional
             Zero-based screen index within the current trial.
         row : dict, optional
-            Trial/session fields copied into the raw screen row.
+            Trial-data fields copied into the raw screen row.
         ctx : RunContext, optional
             Current run context passed to lifecycle hooks.
 
@@ -166,7 +155,7 @@ class Screen:
         dict
             Raw screen row with response, RT, markers, and messages fields.
         """
-        out = _make_screen_row(row, self.data, screen_index, self.screen_name)
+        out = _make_screen_row(row, self.data, screen_index)
         if self.on_start is not None:
             _require_context(ctx, "on_start")
             self.on_start(ctx, out)
@@ -222,7 +211,7 @@ class Screen:
         return out
 
 
-def make_screen(
+def _make_screen(
     stimuli: Sequence[Any],
     duration: Optional[float] = None,
     response: Optional[str] = None,
@@ -232,41 +221,12 @@ def make_screen(
     end_on_response: bool = True,
     clear_events: bool = True,
     data: Optional[Dict[str, Any]] = None,
-    screen_name: Optional[str] = None,
-    run_if: Optional[Callable[[Any], bool]] = None,
     on_start: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
     on_load: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
     on_response: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
     on_finish: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
 ) -> Screen:
-    """Create one screen-level presentation unit.
-
-    Parameters
-    ----------
-    stimuli : sequence
-        Stimulus-like objects to draw.
-    duration : float, optional
-        Maximum screen duration.
-    response : str, optional
-        ``None`` for no response or ``"key"`` for keyboard responses.
-    keys : sequence[str], optional
-        Allowed keyboard responses.
-    choices : object, optional
-        Unsupported in 0.1.0 and reserved for future button responses.
-    response_start, end_on_response, clear_events
-        Screen timing and keyboard response settings; see ``Screen``.
-    data : dict, optional
-        Static screen-level fields copied into each raw row.
-    screen_name : str, optional
-        Readable screen label.
-    run_if, on_start, on_load, on_response, on_finish : callable, optional
-        Lifecycle hooks used by ``Trial`` and ``Timeline``.
-
-    Returns
-    -------
-    Screen
-        Validated screen specification for ``Timeline.show_screen``.
-    """
+    """Create one validated screen-level presentation unit."""
     return Screen(
         stimuli=stimuli,
         duration=duration,
@@ -277,8 +237,6 @@ def make_screen(
         end_on_response=end_on_response,
         clear_events=clear_events,
         data=data,
-        screen_name=screen_name,
-        run_if=run_if,
         on_start=on_start,
         on_load=on_load,
         on_response=on_response,
@@ -296,24 +254,8 @@ def _load_psychopy_event() -> Any:
     return _psychopy.load_event()
 
 
-def _load_psychopy_visual() -> Any:
-    """Import ``psychopy.visual`` only when built-in visual stimuli are needed."""
-    return _psychopy.load_visual()
-
-
 def _validate_stimuli(stimuli: Sequence[Any]) -> List[Any]:
-    """Return a list of drawable stimuli.
-
-    Parameters
-    ----------
-    stimuli : sequence
-        Candidate stimulus objects.
-
-    Returns
-    -------
-    list
-        Drawable stimulus objects.
-    """
+    """Return a list of drawable stimuli."""
     if stimuli is None:
         raise ValueError("stimuli must be provided.")
     stim_list = list(stimuli)
@@ -347,7 +289,7 @@ def _validate_response_mode(response: Optional[str]) -> Optional[str]:
         return None
     value = str(response).strip().lower()
     if value != "key":
-        raise ValueError("response must be None or 'key' in trackflow.beh 0.1.0.")
+        raise ValueError("response must be None or 'key' in the current trackflow.beh runtime.")
     return value
 
 
@@ -362,31 +304,11 @@ def _make_screen_row(
     row: Optional[Dict[str, Any]],
     screen_data: Dict[str, Any],
     screen_index: int,
-    screen_name: Optional[str],
 ) -> Dict[str, Any]:
-    """Create the mutable row shared by all screen lifecycle hooks.
-
-    Parameters
-    ----------
-    row : dict, optional
-        Trial/session fields inherited by this screen.
-    screen_data : dict
-        Static screen-level fields.
-    screen_index : int
-        Zero-based index within the current trial.
-    screen_name : str, optional
-        Readable screen label.
-
-    Returns
-    -------
-    dict
-        Screen row initialized with response, RT, markers, and messages fields.
-    """
+    """Create the mutable row shared by all screen lifecycle hooks."""
     out = dict(row or {})
     out.update(screen_data)
     out.setdefault("screen_index", int(screen_index))
-    if screen_name is not None:
-        out.setdefault("screen_name", str(screen_name))
     out["response"] = None
     out["rt"] = None
     out.setdefault("markers", [])
@@ -397,7 +319,7 @@ def _make_screen_row(
 def _require_context(ctx: Optional[Any], hook_name: str) -> None:
     """Raise a clear error when a lifecycle hook runs without context."""
     if ctx is None:
-        raise RuntimeError(f"{hook_name} requires a RunContext. Use Timeline or Trial to run screens with hooks.")
+        raise RuntimeError(f"{hook_name} requires a RunContext. Use Timeline.run(...) for screens with hooks.")
 
 
 def _draw_visible_stimuli(stimuli: Sequence[Any], elapsed: float) -> None:

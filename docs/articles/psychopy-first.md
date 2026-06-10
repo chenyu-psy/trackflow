@@ -7,7 +7,7 @@ or saved data meanings.
 
 ## Use simple screens when they fit
 
-Use `beh.screens.make_screen()` for screens with a small, explicit contract:
+Use `timeline.make_screen()` for screens with a small, explicit contract:
 
 - draw one or more stimuli
 - optionally collect one keyboard response
@@ -15,13 +15,14 @@ Use `beh.screens.make_screen()` for screens with a small, explicit contract:
 - save one raw screen row
 
 ```python
-screen = beh.screens.make_screen(
+timeline = beh.timeline.setup_timeline(win=win)
+screen = timeline.make_screen(
     stimuli=[fixation],
     duration=0.5,
     response=None,
-    screen_name="fixation",
+    data={"screen_name": "fixation"},
 )
-timeline.show_screen(win, screen)
+timeline.run(screen)
 ```
 
 This is a convenience path for common screens. It should not force complex
@@ -33,7 +34,7 @@ When a trial needs custom frame logic, mouse responses, multiple response
 streams, custom clocks, `win.callOnFlip(...)`, or task-specific branching,
 write the PsychoPy loop directly.
 
-Return a `beh.trials.TrialOutcome` so `trackflow` can still write raw rows,
+Return a `beh.timeline.TrialOutcome` so `trackflow` can still write raw rows,
 summaries, and recovery metadata.
 
 ```python
@@ -41,16 +42,16 @@ from trackflow import beh
 
 
 class SearchTrial:
-    def run(self, timeline, win, row):
+    def run(self, ctx):
         screen_rows = []
 
         # Ordinary PsychoPy drawing, flipping, response collection, and sync
         # logic live here so the procedure remains inspectable.
 
-        return beh.trials.TrialOutcome(
+        return beh.timeline.TrialOutcome(
             status="accepted",
             reason="no",
-            row={"plan_id": row["plan_id"]},
+            row={"plan_id": ctx.trial_data["plan_id"]},
             screen_rows=screen_rows,
         )
 ```

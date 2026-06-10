@@ -1,13 +1,14 @@
 # Behavior Stimuli
 
-Stimuli are timed drawables passed to `beh.screens.make_screen(...)`.
-`trackflow` keeps the screen and stimulus layers separate: screens decide when
-a presentation unit starts and ends, while stimuli define what should be drawn
-inside that screen and when each drawable is visible.
+Stimuli are drawables passed into `timeline.make_screen(...)`. `trackflow`
+keeps the stimulus and screen layers separate: stimuli define what should be
+drawn and when each drawable is visible within a screen, while screens decide
+screen duration, response collection, and raw screen-row output.
 
 ```python
 from trackflow import beh
 
+timeline = beh.timeline.setup_timeline(win=win)
 fix = beh.stimuli.make_fixation(
     win,
     size=0.5,
@@ -17,12 +18,16 @@ fix = beh.stimuli.make_fixation(
     label="fixation",
 )
 
-screen = beh.screens.make_screen(
+screen = timeline.make_screen(
     stimuli=[fix],
     duration=0.5,
     response=None,
 )
 ```
+
+Stimuli do not create screens, run trials, collect responses, send markers, or
+write data. They are ordinary PsychoPy-compatible drawables, optionally wrapped
+with screen-relative visibility timing.
 
 ## Common Parameters
 
@@ -47,7 +52,7 @@ accepted. Response timing belongs to the screen.
 ### fixation
 
 `make_fixation()` creates the current built-in fixation stimulus. It returns a
-timed wrapper that can be passed directly to `beh.screens.make_screen(...)`.
+timed wrapper that can be passed directly to `timeline.make_screen(...)`.
 
 | Parameter | Meaning | Default |
 | --- | --- | --- |

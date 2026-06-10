@@ -1,8 +1,9 @@
 """Trial planning helpers for behavior experiments.
 
-Planning helpers operate on plain dictionaries and return ``list[dict]`` rows
-that can be passed directly to ``Timeline.run(..., rows=...)``. They only use
-explicit user inputs and do not choose condition levels or trial counts.
+Planning helpers operate on plain dictionaries and return ``list[dict]``
+trial-data values that can be passed directly to
+``Timeline.run(..., trial_data=...)``. They only use explicit user inputs and
+do not choose condition levels or trial counts.
 """
 
 from __future__ import annotations
@@ -65,7 +66,7 @@ def build_trial_rows(
     seed: Optional[int] = None,
     plan_prefix: str = "trial",
 ) -> List[Dict[str, Any]]:
-    """Build runtime-ready planned trial rows.
+    """Build runtime-ready trial-data dictionaries.
 
     Parameters
     ----------
@@ -89,7 +90,7 @@ def build_trial_rows(
     Returns
     -------
     list[dict]
-        Planned rows with ``plan_id``, ``session_id``, ``block_id``,
+        Trial-data dictionaries with ``plan_id``, ``session_id``, ``block_id``,
         ``trial_id``, and ``session_trial_id``.
     """
     _validate_build_inputs(conditions, repeats, session_size, block_size)

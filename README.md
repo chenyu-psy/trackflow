@@ -10,10 +10,10 @@ procedure in ordinary PsychoPy scripts.
 
 ## Current status
 
-The current package version is `0.1.0`. It includes:
+The current package version is `0.1.1`. It includes:
 
-- `trackflow.beh` for behavior helpers organized into stimuli, screens,
-  trials, timelines, trial planning, and data output
+- `trackflow.beh` for timeline-owned behavior helpers organized into
+  timelines, stimuli, screens, trials, trial planning, and data output
 - `trackflow.gaze` for EyeLink setup, wrappers, and gaze-break monitoring
 - `trackflow.eeg` for parallel-port marker sending and debug marker senders
 - `trackflow.sync` for explicit EEG and EyeLink sync records
@@ -47,20 +47,20 @@ from trackflow import beh
 
 
 win = visual.Window(size=(1024, 768), units="deg")
+timeline = beh.timeline.setup_timeline(win=win, raw_data_file="data/S01_screen_data.jsonl")
 fix = beh.stimuli.make_fixation(win, size=0.5, color="#000000")
-screen = beh.screens.make_screen(
+screen = timeline.make_screen(
     stimuli=[fix],
     duration=0.5,
     response=None,
-    screen_name="fixation",
+    data={"screen_name": "fixation"},
 )
 
-timeline = beh.timeline.setup_timeline(raw_data_file="data/S01_screen_data.jsonl")
-timeline.show_screen(win, screen)
+timeline.run(screen)
 ```
 
-For complex trials, write normal PsychoPy code and return a
-`beh.trials.TrialOutcome` so `trackflow` can handle common output and
+For complex trials, write a normal PsychoPy object with `run(ctx)` and return
+a `beh.timeline.TrialOutcome` so `trackflow` can handle common output and
 recovery bookkeeping.
 
 ## Development checks
