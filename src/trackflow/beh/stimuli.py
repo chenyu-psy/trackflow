@@ -14,6 +14,15 @@ from typing import Any, List, Optional, Sequence, Tuple
 
 Point = Tuple[float, float]
 
+__all__ = [
+    "FixationParams",
+    "FixationStim",
+    "Stimulus",
+    "Timing",
+    "make_fixation",
+    "wrap_stimulus",
+]
+
 
 class Timing:
     """Screen-relative timing for one stimulus.

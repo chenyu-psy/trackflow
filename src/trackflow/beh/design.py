@@ -12,6 +12,9 @@ import random
 from typing import Any, Dict, List, Optional, Sequence
 
 
+__all__ = ["build_trial_rows", "check_balance", "factor_conditions"]
+
+
 def factor_conditions(factors: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Expand a factor-to-level mapping into condition rows.
 

@@ -11,6 +11,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 
+__all__ = ["RunContext", "Trial", "TrialOutcome"]
+
+
 @dataclass
 class RunContext:
     """Runtime context passed to trial and screen hooks.

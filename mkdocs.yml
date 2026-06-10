@@ -22,7 +22,17 @@ nav:
   - Introduction: index.md
   - API Reference:
       - Package index: api/index.md
-      - Behavior: api/beh.md
+      - Behavior:
+          - Overview: api/beh.md
+          - Stimuli: api/beh/stimuli.md
+          - Screens: api/beh/screens.md
+          - Timeline: api/beh/timeline.md
+          - Trials: api/beh/trials.md
+          - Trial planning: api/beh/design.md
+          - Data output: api/beh/data.md
+          - Recovery: api/beh/recovery.md
+          - Preflight: api/beh/preflight.md
+          - Global keys: api/beh/keys.md
       - Eye tracking: api/gaze.md
       - EEG: api/eeg.md
       - Sync: api/sync.md
@@ -54,3 +64,5 @@ plugins:
             show_root_heading: true
             show_root_full_path: false
             members_order: source
+            filters:
+              - "!^_"

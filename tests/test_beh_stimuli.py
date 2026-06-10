@@ -37,17 +37,19 @@ class BehaviorStimuliTests(unittest.TestCase):
     """Check behavior stimulus construction without opening PsychoPy."""
 
     def test_import_exposes_behavior_module(self):
-        """The top-level package should expose ``beh``."""
-        self.assertTrue(hasattr(beh, "make_fixation"))
-        self.assertTrue(hasattr(beh, "FixationStim"))
-        self.assertTrue(hasattr(beh, "Timing"))
-        self.assertTrue(hasattr(beh, "Stimulus"))
-        self.assertTrue(hasattr(beh, "wrap_stimulus"))
+        """The top-level behavior package should expose stimulus namespace."""
+        self.assertTrue(hasattr(beh, "stimuli"))
+        self.assertTrue(hasattr(beh.stimuli, "make_fixation"))
+        self.assertTrue(hasattr(beh.stimuli, "FixationStim"))
+        self.assertTrue(hasattr(beh.stimuli, "Timing"))
+        self.assertTrue(hasattr(beh.stimuli, "Stimulus"))
+        self.assertTrue(hasattr(beh.stimuli, "wrap_stimulus"))
+        self.assertFalse(hasattr(beh, "make_fixation"))
 
     def test_stimulus_wraps_drawable_with_timing(self):
         """Timed stimuli should accept any object with ``draw()``."""
         obj = FakeShape()
-        stim = beh.wrap_stimulus(drawable=obj, start=0.2, end=1.0, label="target")
+        stim = beh.stimuli.wrap_stimulus(drawable=obj, start=0.2, end=1.0, label="target")
 
         self.assertEqual(stim.timing.start, 0.2)
         self.assertEqual(stim.timing.end, 1.0)
@@ -62,7 +64,7 @@ class BehaviorStimuliTests(unittest.TestCase):
 
     def test_stimulus_defaults_are_full_screen(self):
         """Missing start/end should mean visible for the full screen."""
-        stim = beh.wrap_stimulus(drawable=FakeShape())
+        stim = beh.stimuli.wrap_stimulus(drawable=FakeShape())
 
         self.assertIsNone(stim.timing.start)
         self.assertIsNone(stim.timing.end)
@@ -72,9 +74,9 @@ class BehaviorStimuliTests(unittest.TestCase):
     def test_make_fixation_uses_trackneuact_ratios(self):
         """Fixation geometry should preserve the current template proportions."""
         with mock.patch.object(beh_stimuli, "_load_psychopy_visual", return_value=FakeVisual):
-            stim = beh.make_fixation("win", size=0.5, color="#FFFFFF", start=0.1, end=0.6)
+            stim = beh.stimuli.make_fixation("win", size=0.5, color="#FFFFFF", start=0.1, end=0.6)
 
-        self.assertIsInstance(stim, beh.Stimulus)
+        self.assertIsInstance(stim, beh.stimuli.Stimulus)
         self.assertEqual(stim.label, "fixation")
         self.assertEqual(stim.timing.start, 0.1)
         self.assertEqual(stim.timing.end, 0.6)
@@ -94,14 +96,14 @@ class BehaviorStimuliTests(unittest.TestCase):
     def test_make_fixation_allows_explicit_label(self):
         """Explicit fixation labels should override the default type label."""
         with mock.patch.object(beh_stimuli, "_load_psychopy_visual", return_value=FakeVisual):
-            stim = beh.make_fixation("win", label="cue_fix")
+            stim = beh.stimuli.make_fixation("win", label="cue_fix")
 
         self.assertEqual(stim.label, "cue_fix")
 
     def test_fixation_draws_and_updates_color(self):
         """The composite fixation should draw and recolor every visible part."""
         with mock.patch.object(beh_stimuli, "_load_psychopy_visual", return_value=FakeVisual):
-            stim = beh.make_fixation("win", size=0.5, color="#FFFFFF")
+            stim = beh.stimuli.make_fixation("win", size=0.5, color="#FFFFFF")
 
         fix = stim.drawable
         stim.draw()
@@ -120,7 +122,7 @@ class BehaviorStimuliTests(unittest.TestCase):
     def test_fixation_params_update_size_and_pos(self):
         """Editable fixation params should update the underlying PsychoPy parts."""
         with mock.patch.object(beh_stimuli, "_load_psychopy_visual", return_value=FakeVisual):
-            stim = beh.make_fixation("win", size=0.5, pos=(0, 0), color="#FFFFFF")
+            stim = beh.stimuli.make_fixation("win", size=0.5, pos=(0, 0), color="#FFFFFF")
 
         fix = stim.drawable
         stim.params.size = 0.6
@@ -137,15 +139,15 @@ class BehaviorStimuliTests(unittest.TestCase):
     def test_stimulus_rejects_invalid_input(self):
         """Stimuli should fail early when timing or drawability is invalid."""
         with self.assertRaises(TypeError):
-            beh.wrap_stimulus(drawable=object())
+            beh.stimuli.wrap_stimulus(drawable=object())
 
         with self.assertRaises(ValueError):
-            beh.wrap_stimulus(drawable=FakeShape(), start=-0.1)
+            beh.stimuli.wrap_stimulus(drawable=FakeShape(), start=-0.1)
 
         with self.assertRaises(ValueError):
-            beh.wrap_stimulus(drawable=FakeShape(), start=1.0, end=0.5)
+            beh.stimuli.wrap_stimulus(drawable=FakeShape(), start=1.0, end=0.5)
 
-        timing = beh.Timing(start=0.2, end=1.0)
+        timing = beh.stimuli.Timing(start=0.2, end=1.0)
         with self.assertRaises(ValueError):
             timing.end = 0.1
         with self.assertRaises(ValueError):
@@ -155,7 +157,7 @@ class BehaviorStimuliTests(unittest.TestCase):
         """Fixation size should be positive."""
         with mock.patch.object(beh_stimuli, "_load_psychopy_visual", return_value=FakeVisual):
             with self.assertRaises(ValueError):
-                beh.make_fixation("win", size=0)
+                beh.stimuli.make_fixation("win", size=0)
 
 
 if __name__ == "__main__":

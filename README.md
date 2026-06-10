@@ -12,8 +12,9 @@ procedure in ordinary PsychoPy scripts.
 
 The current package version is `0.1.0`. It includes:
 
-- `trackflow.beh` for behavior screens, trial rows, raw JSONL output, summary
-  CSV output, recovery metadata, global researcher keys, and preflight checks
+- `trackflow.beh` for behavior helpers organized into stimuli, screens,
+  timelines, trials, trial planning, data output, recovery, global researcher
+  keys, and preflight checks
 - `trackflow.gaze` for EyeLink setup, wrappers, and gaze-break monitoring
 - `trackflow.eeg` for parallel-port marker sending and debug marker senders
 - `trackflow.sync` for explicit EEG and EyeLink sync records
@@ -47,21 +48,21 @@ from trackflow import beh
 
 
 win = visual.Window(size=(1024, 768), units="deg")
-fix = beh.make_fixation(win, size=0.5, color="#000000")
-screen = beh.make_screen(
+fix = beh.stimuli.make_fixation(win, size=0.5, color="#000000")
+screen = beh.screens.make_screen(
     stimuli=[fix],
     duration=0.5,
     response=None,
     screen_name="fixation",
 )
 
-timeline = beh.setup_timeline(raw_data_file="data/S01_screen_data.jsonl")
+timeline = beh.timeline.setup_timeline(raw_data_file="data/S01_screen_data.jsonl")
 timeline.show_screen(win, screen)
 ```
 
 For complex trials, write normal PsychoPy code and return a
-`beh.TrialOutcome` so `trackflow` can handle common output and recovery
-bookkeeping.
+`beh.trials.TrialOutcome` so `trackflow` can handle common output and
+recovery bookkeeping.
 
 ## Development checks
 

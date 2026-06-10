@@ -11,6 +11,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 
+__all__ = ["GlobalKeyAction"]
+
+
 @dataclass
 class GlobalKeyAction:
     """One researcher key action available during behavior screens.

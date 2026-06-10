@@ -12,6 +12,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from . import _psychopy
 
 
+__all__ = ["Screen", "make_screen"]
+
+
 class Screen:
     """One screen-level presentation and keyboard-response unit.
 
