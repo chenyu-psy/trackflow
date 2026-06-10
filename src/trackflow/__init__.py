@@ -6,6 +6,6 @@ or open PsychoPy windows.
 """
 
 from ._version import __version__
-from . import beh, eeg, gaze, sync
+from . import beh, eeg, gaze
 
-__all__ = ["__version__", "beh", "eeg", "gaze", "sync"]
+__all__ = ["__version__", "beh", "eeg", "gaze"]

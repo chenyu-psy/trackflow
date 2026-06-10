@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+import trackflow
 from trackflow import beh
 from trackflow.beh import keys as beh_keys
 from trackflow.beh import preflight as beh_preflight
@@ -168,6 +169,7 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertTrue(hasattr(beh.timeline, "RunContext"))
         self.assertTrue(hasattr(beh.timeline, "TrialOutcome"))
         self.assertTrue(hasattr(beh.timeline, "Timeline"))
+        self.assertFalse(hasattr(trackflow, "sync"))
         self.assertFalse(hasattr(beh, "screens"))
         self.assertFalse(hasattr(beh, "trials"))
         self.assertFalse(hasattr(beh, "make_screen"))
@@ -393,17 +395,15 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertEqual(timeline.records[0]["stim_file"], "sample.png")
         self.assertEqual(screen.duration, 0.2)
 
-    def test_on_load_can_save_sync_records_after_first_flip(self):
-        """on_load should run after the first flip and let users save sync records."""
+    def test_on_load_can_send_after_first_flip_without_mutating_row(self):
+        """on_load should send after the first flip without saving records."""
         eeg_sender = FakeEegSender()
         gaze_sender = FakeGazeSender()
 
         def mark_sample(ctx, data):
-            """Send and explicitly save one sample-onset sync result."""
+            """Send one sample-onset event."""
             data["flip_count_at_marker"] = ctx.win.flip_calls
-            result = ctx.sync.send(21, gaze_message="sample")
-            data["markers"].extend(result.markers)
-            data["messages"].extend(result.messages)
+            ctx.send(21, message="sample")
 
         screen = beh_timeline.Screen(
             stimuli=[FakeStim()],
@@ -421,21 +421,21 @@ class BehaviorScreenTests(unittest.TestCase):
 
         row = timeline.records[0]
         self.assertEqual(row["flip_count_at_marker"], 1)
-        self.assertEqual(row["markers"], [{"source": "eeg", "code": 21, "status": "sent"}])
-        self.assertEqual(row["messages"], [{"source": "eyelink", "text": "sample", "status": "sent"}])
+        self.assertEqual(row["markers"], [])
+        self.assertEqual(row["messages"], [])
         self.assertEqual(eeg_sender.sent, [21])
         self.assertEqual(gaze_sender.messages, ["sample"])
 
     def test_condition_specific_code_lookup_uses_screen_data(self):
-        """Hooks can choose numeric codes from ctx.sync.code and inherited data."""
+        """Hooks can choose numeric codes from ctx.code and inherited data."""
         eeg_sender = FakeEegSender()
         eeg_sender.code = {"left": 41, "right": 42}
 
         def mark_condition(ctx, data):
             """Look up a condition-specific code before sending."""
-            code = ctx.sync.code[data["condition"]]
-            result = ctx.sync.send(code)
-            data["markers"].extend(result.markers)
+            code = ctx.code[data["condition"]]
+            ctx.send(code)
+            data["EEG"] = code
 
         screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, on_load=mark_condition)
         timeline = beh.timeline.setup_timeline(win=FakeWindow(), eeg=eeg_sender)
@@ -447,8 +447,88 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(trial, trial_data={"condition": "right"})
 
-        self.assertEqual(timeline.records[0]["markers"], [{"source": "eeg", "code": 42, "status": "sent"}])
+        self.assertEqual(timeline.records[0]["markers"], [])
+        self.assertEqual(timeline.records[0]["EEG"], 42)
         self.assertEqual(eeg_sender.sent, [42])
+
+    def test_send_eeg_sends_marker_only(self):
+        """ctx.send_eeg should send EEG without mutating row records."""
+        eeg_sender = FakeEegSender()
+
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, on_load=lambda ctx: ctx.send_eeg(21))
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), eeg=eeg_sender)
+        core = FakeCore([0.0, 0.0, 0.2])
+        event = FakeEvent(key_batches=[[]])
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                timeline.run(screen)
+
+        self.assertEqual(timeline.records[0]["markers"], [])
+        self.assertEqual(timeline.records[0]["messages"], [])
+        self.assertEqual(eeg_sender.sent, [21])
+
+    def test_send_gaze_sends_message_only(self):
+        """ctx.send_gaze should send EyeLink text without mutating row records."""
+        gaze_sender = FakeGazeSender()
+
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, on_load=lambda ctx: ctx.send_gaze("sample"))
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), gaze=gaze_sender)
+        core = FakeCore([0.0, 0.0, 0.2])
+        event = FakeEvent(key_batches=[[]])
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                timeline.run(screen)
+
+        self.assertEqual(timeline.records[0]["markers"], [])
+        self.assertEqual(timeline.records[0]["messages"], [])
+        self.assertEqual(gaze_sender.messages, ["sample"])
+
+    def test_send_failure_sets_pause_state_without_row_record(self):
+        """Failed sends should set pause state without adding row records."""
+        eeg_sender = FakeEegSender(fail=True)
+
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, on_load=lambda ctx: ctx.send(21))
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), eeg=eeg_sender)
+        core = FakeCore([0.0, 0.0, 0.2])
+        event = FakeEvent(key_batches=[[]])
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                timeline.run(screen)
+
+        self.assertEqual(timeline.records[0]["markers"], [])
+        self.assertTrue(timeline.state["pause_experiment"])
+        self.assertIn("21", timeline.state["sync_error"])
+
+    def test_timeline_send_works_outside_run_without_creating_rows(self):
+        """timeline.send should support trial-outside sends without rows."""
+        eeg_sender = FakeEegSender()
+        gaze_sender = FakeGazeSender()
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), eeg=eeg_sender, gaze=gaze_sender)
+
+        result = timeline.send(99, message="block_start")
+
+        self.assertIsNone(result)
+        self.assertEqual(timeline.records, [])
+        self.assertEqual(eeg_sender.sent, [99])
+        self.assertEqual(gaze_sender.messages, ["block_start"])
+
+    def test_send_without_configured_devices_leaves_row_empty(self):
+        """ctx.send should not add records when no sender is configured."""
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, on_load=lambda ctx: ctx.send(21, message="sample"))
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+        core = FakeCore([0.0, 0.0, 0.2])
+        event = FakeEvent(key_batches=[[]])
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                timeline.run(screen)
+
+        self.assertEqual(timeline.records[0]["markers"], [])
+        self.assertEqual(timeline.records[0]["messages"], [])
+        self.assertEqual(timeline.state, {})
 
     def test_on_finish_can_read_final_response_fields(self):
         """on_finish should see response fields after built-in key collection."""

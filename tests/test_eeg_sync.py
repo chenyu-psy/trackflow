@@ -1,9 +1,8 @@
-"""Tests for EEG marker sending and sync result records."""
+"""Tests for EEG marker sending."""
 
 import unittest
 
 from trackflow import eeg
-from trackflow.sync import SyncController
 
 
 class FakePort:
@@ -97,77 +96,6 @@ class EegTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             sender.send(0)
-
-
-class SyncTests(unittest.TestCase):
-    """Check sync send records and failure state."""
-
-    def test_sync_send_returns_marker_without_mutating_data(self):
-        """Sync send should not append to behavior data automatically."""
-        data = {"markers": [], "messages": []}
-        state = {}
-        eeg_sender = FakeEegSender()
-        gaze_sender = FakeGazeSender()
-        sync = SyncController(eeg=eeg_sender, gaze=gaze_sender, state=state)
-
-        result = sync.send(21)
-
-        self.assertEqual(data, {"markers": [], "messages": []})
-        self.assertEqual(result.markers, [{"source": "eeg", "code": 21, "status": "sent"}])
-        self.assertEqual(result.messages, [])
-        self.assertEqual(eeg_sender.sent, [21])
-        self.assertEqual(gaze_sender.messages, [])
-        self.assertEqual(state, {})
-
-    def test_sync_records_can_be_extended_into_data(self):
-        """Users should be able to save returned records explicitly."""
-        data = {"markers": [], "messages": []}
-        sync = SyncController(eeg=FakeEegSender(), gaze=FakeGazeSender(), state={})
-
-        result = sync.send(31, gaze_message="response")
-        data["markers"].extend(result.markers)
-        data["messages"].extend(result.messages)
-
-        self.assertEqual(data["markers"][0]["code"], 31)
-        self.assertEqual(data["messages"][0]["text"], "response")
-
-    def test_sync_exposes_sender_code_dictionary(self):
-        """ctx.sync.code should expose the EEG sender's code dictionary."""
-        eeg_sender = FakeEegSender()
-        eeg_sender.code = {"sample": 21}
-        sync = SyncController(eeg=eeg_sender, state={})
-
-        self.assertEqual(sync.code, {"sample": 21})
-
-    def test_sync_send_rejects_string_code_keys(self):
-        """Users should explicitly look up code keys before sending."""
-        sync = SyncController(eeg=FakeEegSender(), state={})
-
-        with self.assertRaises(ValueError):
-            sync.send("sample")
-
-    def test_explicit_gaze_message_sends_to_eyelink(self):
-        """EyeLink messages should send only when gaze_message is explicit."""
-        gaze_sender = FakeGazeSender()
-        sync = SyncController(gaze=gaze_sender, state={})
-
-        result = sync.send(21, gaze_message="sample")
-
-        self.assertEqual(result.markers, [])
-        self.assertEqual(result.messages, [{"source": "eyelink", "text": "sample", "status": "sent"}])
-        self.assertEqual(gaze_sender.messages, ["sample"])
-
-    def test_eeg_failure_returns_record_and_sets_pause_state(self):
-        """Failed EEG sends should be visible in records and timeline state."""
-        state = {}
-        sync = SyncController(eeg=FakeEegSender(fail=True), state=state)
-
-        result = sync.send(21)
-
-        self.assertEqual(result.markers[0]["status"], "failed")
-        self.assertIn("port failed", result.markers[0]["error"])
-        self.assertTrue(state["pause_experiment"])
-        self.assertIn("21", state["sync_error"])
 
 
 if __name__ == "__main__":

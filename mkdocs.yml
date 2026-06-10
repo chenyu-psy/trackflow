@@ -30,7 +30,6 @@ nav:
           - Data output: api/beh/data.md
       - Eye tracking: api/gaze.md
       - EEG: api/eeg.md
-      - Sync: api/sync.md
   - Articles:
       - articles/index.md
       - PsychoPy-first runtime helpers: articles/psychopy-first.md

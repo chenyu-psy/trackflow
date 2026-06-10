@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .. import _psychopy
@@ -35,8 +36,9 @@ class Screen:
         Screen-level fields copied into the returned raw screen row. Use this
         for readable labels such as ``{"screen_name": "fixation"}``.
     on_start, on_load, on_frame, on_finish : callable, optional
-        Lifecycle hooks receiving ``RunContext`` and the current raw row.
-        ``on_frame`` also receives the screen-relative elapsed time.
+        Lifecycle hooks. Hooks may receive only ``RunContext`` for concise
+        context-owned actions, or explicit row arguments: ``(ctx, data)`` for
+        start/load/finish and ``(ctx, data, elapsed)`` for frame hooks.
 
     Examples
     --------
@@ -158,7 +160,7 @@ class Screen:
         try:
             if self.on_start is not None:
                 _require_context(ctx, "on_start")
-                self.on_start(ctx, out)
+                _call_row_hook(self.on_start, ctx, out)
 
             core = _load_psychopy_core()
             event = _load_psychopy_event()
@@ -181,11 +183,11 @@ class Screen:
                     loaded = True
                     if self.on_load is not None:
                         _require_context(ctx, "on_load")
-                        self.on_load(ctx, out)
+                        _call_row_hook(self.on_load, ctx, out)
 
                 if self.on_frame is not None:
                     _require_context(ctx, "on_frame")
-                    self.on_frame(ctx, out, elapsed)
+                    _call_frame_hook(self.on_frame, ctx, out, elapsed)
 
                 if ctx is not None and hasattr(ctx.timeline, "handle_global_keys"):
                     if ctx.timeline.handle_global_keys(ctx, out, event):
@@ -204,7 +206,7 @@ class Screen:
             out["rt"] = rt
             if self.on_finish is not None:
                 _require_context(ctx, "on_finish")
-                self.on_finish(ctx, out)
+                _call_row_hook(self.on_finish, ctx, out)
         except TrialInterrupted as err:
             out["response"] = response_value
             out["rt"] = rt
@@ -338,6 +340,42 @@ def _require_context(ctx: Optional[Any], hook_name: str) -> None:
     """Raise a clear error when a lifecycle hook runs without context."""
     if ctx is None:
         raise RuntimeError(f"{hook_name} requires a RunContext. Use Timeline.run(...) for screens with hooks.")
+
+
+def _call_row_hook(hook: Callable[..., None], ctx: Any, data: Dict[str, Any]) -> None:
+    """Call a row hook with either ``ctx`` or ``ctx, data``."""
+    if _accepts_n_positional_args(hook, 1) and not _accepts_n_positional_args(hook, 2):
+        hook(ctx)
+        return
+    hook(ctx, data)
+
+
+def _call_frame_hook(hook: Callable[..., None], ctx: Any, data: Dict[str, Any], elapsed: float) -> None:
+    """Call a frame hook with concise or explicit arguments."""
+    if _accepts_n_positional_args(hook, 1) and not _accepts_n_positional_args(hook, 2):
+        hook(ctx)
+        return
+    if _accepts_n_positional_args(hook, 2) and not _accepts_n_positional_args(hook, 3):
+        hook(ctx, elapsed)
+        return
+    hook(ctx, data, elapsed)
+
+
+def _accepts_n_positional_args(hook: Callable[..., None], count: int) -> bool:
+    """Return whether ``hook`` can be called with ``count`` positional args."""
+    try:
+        signature = inspect.signature(hook)
+    except (TypeError, ValueError):
+        return True
+    positional = [
+        param
+        for param in signature.parameters.values()
+        if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD)
+    ]
+    if any(param.kind == param.VAR_POSITIONAL for param in signature.parameters.values()):
+        return True
+    required = [param for param in positional if param.default is param.empty]
+    return len(required) <= count <= len(positional)
 
 
 def _draw_visible_stimuli(stimuli: Sequence[Any], elapsed: float) -> None:

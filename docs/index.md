@@ -12,22 +12,21 @@ deployment workflows.
 
 `trackflow` helps psychology researchers keep experiment scripts explicit while
 reusing the runtime pieces that often become repetitive across studies:
-behavior rows, trial summaries, recovery metadata, EyeLink wrappers, EEG marker
-sending, and sync records.
+behavior rows, trial summaries, interruption status, EyeLink setup,
+gaze-break monitoring, EEG marker sending, and timeline-owned send helpers.
 
 The package is intentionally not a full experiment runner. Use ordinary
 PsychoPy code for the scientific procedure, timing, stimuli, and responses. Use
 `trackflow` for the parts that are shared across experiments and need to be
 consistent.
 
-The current public API is organized into four runtime areas:
+The current public API is organized into three runtime areas:
 
 - `trackflow.beh` for timeline-owned behavior helpers organized into
   timelines, stimuli, screens, trials, trial planning, interruption status, and
   data output
-- `trackflow.gaze` for EyeLink setup, tracker wrappers, and gaze monitoring
-- `trackflow.eeg` for parallel-port marker senders and debug marker senders
-- `trackflow.sync` for explicit EEG and EyeLink sync records
+- `trackflow.gaze` for EyeLink setup and gaze-break monitoring
+- `trackflow.eeg` for EEG setup and marker sending
 
 ## Installation
 
@@ -91,11 +90,11 @@ Use `on_frame(ctx, data, elapsed)` for real-time monitoring such as gaze breaks
 or early presses. The hook can call `ctx.break_trial(...)` so experiment code
 can record the interrupted attempt and decide its own retry policy.
 
-### Sync records are explicit
+### Sends stay visible
 
-EEG and EyeLink sends return records that experiment code explicitly stores in
-the current row. This keeps marker timing and saved data visible to the
-researcher.
+EEG and EyeLink sends happen from timeline hooks with `ctx.send(...)`. The hook
+still chooses marker codes, message text, send timing, and any saved data
+fields.
 
 <div class="trackflow-link-list">
   <a href="articles/psychopy-first/">PsychoPy-first runtime helpers</a>

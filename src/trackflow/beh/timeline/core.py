@@ -16,9 +16,9 @@ from ..keys import (
 )
 from ..recovery import mark_plan_completed, save_meta_state
 from ..stimuli import wrap_stimulus
-from ...sync import SyncController
 from .context import RunContext, TrialOutcome
 from .screen import Screen, _make_screen
+from .sync import send_eeg, send_gaze
 from .trial import _Trial
 
 
@@ -42,7 +42,7 @@ class Timeline:
     params, state : dict, optional
         Stable runtime parameters and mutable runtime state.
     eeg, gaze : object, optional
-        Configured EEG sender and EyeLink wrapper used by ``ctx.sync``.
+        Configured EEG sender and EyeLink wrapper used by ``ctx.send(...)``.
     global_actions : sequence, optional
         Researcher global-key actions. When omitted, default pause and quit
         actions are enabled.
@@ -84,7 +84,6 @@ class Timeline:
         self.state = dict(state or {})
         self.eeg = eeg
         self.gaze = gaze
-        self.sync = SyncController(eeg=eeg, gaze=gaze, state=self.state)
         self.global_actions = coerce_global_actions(global_actions, use_defaults=use_default_global_actions)
         if global_actions is None and use_default_global_actions:
             _attach_default_quit_screen(self.global_actions)
@@ -137,11 +136,10 @@ class Timeline:
         data : dict, optional
             Static screen-level fields copied into each raw screen row.
         on_start, on_load, on_frame, on_finish : callable, optional
-            Lifecycle hooks receiving ``(ctx, data)``. ``data`` is the mutable
-            raw screen row. ``on_load`` runs after the first flip,
-            ``on_frame`` runs once per screen-loop frame as
-            ``(ctx, data, elapsed)``, and ``on_finish`` runs after the screen
-            ends with final response fields available.
+            Lifecycle hooks. Hooks may receive only ``ctx`` for concise
+            context-owned actions such as ``ctx.send(...)``. They may also
+            receive the mutable row as ``(ctx, data)``; ``on_frame`` may
+            receive elapsed time as ``(ctx, data, elapsed)``.
 
         Returns
         -------
@@ -367,6 +365,45 @@ class Timeline:
         rows = self.records if kind == "raw" else self.summary_records
         return DataRows(rows).filter(**filters)
 
+    @property
+    def code(self) -> Dict[str, int]:
+        """Return the configured EEG code dictionary."""
+        return dict(getattr(self.eeg, "code", {}) or {})
+
+    def send(self, code: Optional[int] = None, message: Optional[str] = None) -> None:
+        """Send one EEG marker and/or EyeLink message.
+
+        Parameters
+        ----------
+        code : int, optional
+            EEG marker code to send.
+        message : str, optional
+            EyeLink message text to send.
+
+        Returns
+        -------
+        None
+            Sends hardware side effects only. This method does not create data
+            rows or write marker/message fields.
+        """
+        if code is None and message is None:
+            raise ValueError("timeline.send(...) requires code, message, or both.")
+        if code is not None:
+            self.send_eeg(code)
+        if message is not None:
+            self.send_gaze(str(message))
+        return None
+
+    def send_eeg(self, code: int) -> None:
+        """Send one EEG marker through the configured sender."""
+        send_eeg(self.eeg, self.state, code)
+        return None
+
+    def send_gaze(self, message: str) -> None:
+        """Send one EyeLink message through the configured tracker."""
+        send_gaze(self.gaze, self.state, str(message))
+        return None
+
     def get_last_data(self, kind: str = "raw", unit: str = "screen") -> DataRows:
         """Return the most recent completed screen, trial, block, or session.
 
@@ -476,7 +513,6 @@ class Timeline:
                 params=self.params,
                 state=self.state,
                 screen=screen,
-                sync=self.sync,
             )
             self._prepare_screen_run(screen)
             if screen_index_start is None:
@@ -498,7 +534,6 @@ class Timeline:
             params=self.params,
             state=self.state,
             screen=screen,
-            sync=self.sync,
         )
         self._prepare_screen_run(screen)
         return screen.run(ctx.win, screen_index=0, row=screen_ctx.trial_data, ctx=screen_ctx)
@@ -527,7 +562,6 @@ class Timeline:
             trial_data=dict(trial_data),
             params=self.params,
             state=self.state,
-            sync=self.sync,
         )
 
     def _coerce_trial_unit(self, unit: Any) -> Any:

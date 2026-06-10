@@ -39,7 +39,7 @@ streams, custom clocks, `win.callOnFlip(...)`, or task-specific branching,
 write the PsychoPy loop directly.
 
 Return a `beh.timeline.TrialOutcome` so `trackflow` can still write raw rows,
-summaries, and recovery metadata.
+summaries, and completion state.
 
 ```python
 from trackflow import beh
@@ -60,19 +60,20 @@ class SearchTrial:
         )
 ```
 
-## Keep sync explicit
+## Keep Sends Visible
 
-Lifecycle hooks can send EEG markers and EyeLink messages, but the returned
-records should be written into the current data row by the experiment code.
+Lifecycle hooks can send EEG markers and EyeLink messages through the runtime
+context. The hook chooses marker codes, message text, timing, and any saved
+data fields.
 
 ```python
 def mark_sample(ctx, data):
-    result = ctx.sync.send(21, gaze_message="sample")
-    data["markers"].extend(result.markers)
-    data["messages"].extend(result.messages)
+    ctx.send(21, message="sample")
+    data["EEG"] = 21
+    data["ET_message"] = "sample"
 ```
 
-This makes marker labels, marker codes, and saved records visible in the
+This keeps marker labels, marker codes, send timing, and saved fields visible in the
 experiment source.
 
 ## Avoid hidden design decisions

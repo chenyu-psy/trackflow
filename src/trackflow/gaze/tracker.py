@@ -7,7 +7,12 @@ import sys
 import time
 from typing import Any, Callable, Optional, Sequence, Tuple
 
-from .config import GazeConfig, _make_tracking_settings, _validate_edf_name
+from .config import (
+    GazeConfig,
+    _make_tracking_settings,
+    _readable_text_color,
+    _validate_edf_name,
+)
 from .display import _make_eyelink_display
 from .monitor import GazeMonitor
 from .runtime import (
@@ -81,7 +86,7 @@ class ConnectedEyeLinker:
         self.display = _make_eyelink_display(win, self.tracker)
         self.debug = False
         self.graphics_initialized = False
-        self.text_color = cfg.text_color
+        self.text_color = _readable_text_color(cfg.bg_color)
 
     def initialize_graphics(self) -> None:
         """Open EyeLink calibration graphics through PsychoPy.
@@ -241,11 +246,11 @@ class ConnectedEyeLinker:
         )
         self.send_tracking_settings(settings)
         if intro:
-            _draw_text_page(self.win, intro_text, text_color=self.cfg.text_color, bg_color=self.cfg.bg_color)
+            _draw_text_page(self.win, intro_text, text_color=self.text_color, bg_color=self.cfg.bg_color)
             _wait_for_continue(self.win, continue_keys)
         self.calibrate()
         if transition:
-            _draw_text_page(self.win, transition_text, text_color=self.cfg.text_color, bg_color=self.cfg.bg_color)
+            _draw_text_page(self.win, transition_text, text_color=self.text_color, bg_color=self.cfg.bg_color)
             _wait_for_continue(self.win, continue_keys)
 
     def run_drift_correction(self, position: Optional[Tuple[int, int]] = None, setup: int = 1) -> None:
@@ -270,8 +275,6 @@ class ConnectedEyeLinker:
         max_dist_deg: Optional[float] = None,
         pix_radius: Optional[float] = None,
         fixation: Any = None,
-        drift_after: Optional[int] = None,
-        pause_after: Optional[int] = None,
         time_func: Optional[Callable[[], float]] = None,
         sleep_func: Optional[Callable[[float], None]] = None,
     ) -> GazeMonitor:
@@ -286,10 +289,6 @@ class ConnectedEyeLinker:
             ``max_dist_deg``.
         fixation : object | None, optional
             Optional fixation stimulus used by feedback drawing.
-        drift_after : int | None, optional
-            Optional rejection threshold override for drift correction.
-        pause_after : int | None, optional
-            Optional rejection threshold override for researcher pause.
         time_func : callable | None, optional
             Test hook returning current time in seconds.
         sleep_func : callable | None, optional
@@ -307,8 +306,6 @@ class ConnectedEyeLinker:
             max_dist_deg=max_dist_deg,
             pix_radius=pix_radius,
             fixation=fixation,
-            drift_after=drift_after,
-            pause_after=pause_after,
             time_func=time_func,
             sleep_func=sleep_func,
         )
@@ -562,7 +559,7 @@ class DebugEyeLinker:
         self.display = None
         self.debug = True
         self.graphics_initialized = True
-        self.text_color = cfg.text_color
+        self.text_color = _readable_text_color(cfg.bg_color)
         self.gaze_data_both = (None, None)
 
     def initialize_graphics(self) -> None:
@@ -655,8 +652,6 @@ class DebugEyeLinker:
         max_dist_deg: Optional[float] = None,
         pix_radius: Optional[float] = None,
         fixation: Any = None,
-        drift_after: Optional[int] = None,
-        pause_after: Optional[int] = None,
         time_func: Optional[Callable[[], float]] = None,
         sleep_func: Optional[Callable[[float], None]] = None,
     ) -> GazeMonitor:
@@ -675,8 +670,6 @@ class DebugEyeLinker:
             max_dist_deg=max_dist_deg,
             pix_radius=pix_radius,
             fixation=fixation,
-            drift_after=drift_after,
-            pause_after=pause_after,
             time_func=time_func,
             sleep_func=sleep_func,
         )
@@ -693,7 +686,7 @@ def setup_tracker(
     monitor: Any = None,
     debug: bool = False,
 ) -> Any:
-    """Create and initialize an EyeLink tracker wrapper.
+    """Create and initialize an EyeLink tracker object.
 
     Parameters
     ----------
@@ -711,8 +704,8 @@ def setup_tracker(
 
     Returns
     -------
-    ConnectedEyeLinker | DebugEyeLinker
-        Initialized tracker wrapper. Calibration is not run automatically.
+    object
+        Initialized tracker. Calibration is not run automatically.
     """
     if debug:
         return DebugEyeLinker(win=win, cfg=cfg, edf_name=edf_name, monitor=monitor)
@@ -730,4 +723,3 @@ def setup_tracker(
     tracker.initialize_tracker()
     tracker.send_tracking_settings(_make_tracking_settings(cfg))
     return tracker
-
