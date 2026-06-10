@@ -66,11 +66,10 @@ bookkeeping.
 ## Development checks
 
 ```bash
-uv sync --group dev
-uv run pytest
-uv run ruff check src tests
-uv run black --check src tests
-uv run mkdocs build --strict
+uv sync --only-group dev --no-install-project
+PYTHONPATH=src uv run --no-sync pytest
+PYTHONPATH=src uv run --no-sync ruff check src tests
+PYTHONPATH=src uv run --no-sync mkdocs build --strict
 ```
 
 ## Documentation
