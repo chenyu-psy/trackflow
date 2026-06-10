@@ -14,7 +14,9 @@ balance counts.
 ```python
 conditions = beh.design.factor_conditions({"condition": ["left", "right"]})
 trial_data = beh.design.build_trial_rows(conditions, repeats=2, random_order=True, seed=1)
-timeline.run(trial, trial_data=trial_data)
+
+for row in trial_data:
+    timeline.run(trial, trial_data=row)
 ```
 
 The function name `build_trial_rows(...)` is retained for now, but the returned

@@ -56,7 +56,7 @@ class GlobalKeyAction:
 
 
 def make_default_global_actions() -> List[GlobalKeyAction]:
-    """Return the 0.1.0 default researcher pause and quit actions.
+    """Return the default researcher pause and quit actions.
 
     Parameters
     ----------
@@ -166,13 +166,14 @@ def fallback_key_map(actions: Sequence[GlobalKeyAction]) -> Dict[str, GlobalKeyA
     return key_map
 
 
-def find_response_key_conflicts(screen_keys: Optional[Sequence[str]], actions: Sequence[GlobalKeyAction]) -> List[str]:
-    """Return global fallback keys that overlap participant response keys.
+def find_response_key_conflicts(screen_choices: Optional[Sequence[str]], actions: Sequence[GlobalKeyAction]) -> List[str]:
+    """Return global fallback keys that overlap participant key choices.
 
     Parameters
     ----------
-    screen_keys : sequence[str] or None
-        Allowed participant keys. ``None`` means any key is accepted.
+    screen_choices : sequence[str] or None
+        Allowed participant key choices. ``None`` means no participant key is
+        accepted.
     actions : sequence[GlobalKeyAction]
         Configured global key actions.
 
@@ -184,10 +185,10 @@ def find_response_key_conflicts(screen_keys: Optional[Sequence[str]], actions: S
     fallback_keys = sorted(fallback_key_map(actions).keys())
     if not fallback_keys:
         return []
-    if screen_keys is None:
-        return fallback_keys
+    if screen_choices is None:
+        return []
 
-    response_keys = {normalize_key_name(key) for key in screen_keys}
+    response_keys = {normalize_key_name(key) for key in screen_choices}
     return [key for key in fallback_keys if key in response_keys]
 
 

@@ -21,7 +21,6 @@ fix = beh.stimuli.make_fixation(
 screen = timeline.make_screen(
     stimuli=[fix],
     duration=0.5,
-    response=None,
 )
 ```
 

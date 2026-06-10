@@ -23,7 +23,8 @@ consistent.
 The current public API is organized into four runtime areas:
 
 - `trackflow.beh` for timeline-owned behavior helpers organized into
-  timelines, stimuli, screens, trials, trial planning, and data output
+  timelines, stimuli, screens, trials, trial planning, interruption status, and
+  data output
 - `trackflow.gaze` for EyeLink setup, tracker wrappers, and gaze monitoring
 - `trackflow.eeg` for parallel-port marker senders and debug marker senders
 - `trackflow.sync` for explicit EEG and EyeLink sync records
@@ -60,7 +61,6 @@ fix = beh.stimuli.make_fixation(win, size=0.5, color="#000000")
 screen = timeline.make_screen(
     stimuli=[fix],
     duration=0.5,
-    response=None,
     data={"screen_name": "fixation"},
 )
 
@@ -86,6 +86,10 @@ should remain visible in the experiment script or project settings.
 first-key responses. For complex trials, write a normal PsychoPy trial object
 with `run(ctx)` and return `beh.timeline.TrialOutcome` so
 `beh.timeline.Timeline` can still handle output and recovery bookkeeping.
+
+Use `on_frame(ctx, data, elapsed)` for real-time monitoring such as gaze breaks
+or early presses. The hook can call `ctx.break_trial(...)` so experiment code
+can record the interrupted attempt and decide its own retry policy.
 
 ### Sync records are explicit
 
