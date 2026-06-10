@@ -26,9 +26,9 @@ screen = beh.screens.make_screen(
 
 ## Common Parameters
 
-These parameters describe the long-term contract for built-in visual stimuli.
-Not every stimulus type uses every field, but future built-ins should follow
-the same meanings when the field is present.
+These parameters describe the shared contract for built-in visual stimuli.
+Not every stimulus type uses every field, but built-ins should follow the same
+meanings when the field is present.
 
 | Parameter | Meaning | Default |
 | --- | --- | --- |
@@ -42,7 +42,7 @@ the same meanings when the field is present.
 clock, change the screen duration, or decide when participant responses are
 accepted. Response timing belongs to the screen.
 
-## Available Stimuli
+## Built-in Stimuli
 
 ### fixation
 
@@ -64,19 +64,7 @@ The fixation helper preserves the migrated `trackNeuAct` fixation proportions.
 Its transparent cross gap is not drawn as a background-colored mask, so it
 remains transparent on non-matching backgrounds.
 
-## Planned Stimulus Types
-
-The `beh.stimuli` namespace is intended to grow into a small set of built-in
-visual stimulus helpers. Planned types include:
-
-- `square`
-- `circle`
-- `text`
-- `image`
-
-These types are not implemented yet. When added, each type should document its
-specific parameters below the common parameter contract rather than expanding
-the top-level behavior API.
+::: trackflow.beh.stimuli.make_fixation
 
 ## Custom Stimuli
 
@@ -102,17 +90,4 @@ built-in stimuli. The wrapped object remains a normal PsychoPy object; users
 can keep editing it directly before or during their ordinary PsychoPy trial
 code when the experiment design requires that flexibility.
 
-::: trackflow.beh.stimuli
-    options:
-      members:
-        - wrap_stimulus
-
-## Built-in Function Reference
-
-The reference below intentionally lists only current built-in helper functions.
-Implementation classes are not expanded here.
-
-::: trackflow.beh.stimuli
-    options:
-      members:
-        - make_fixation
+::: trackflow.beh.stimuli.wrap_stimulus
