@@ -20,10 +20,11 @@ PsychoPy code for the scientific procedure, timing, stimuli, and responses. Use
 `trackflow` for the parts that are shared across experiments and need to be
 consistent.
 
-The current public API is organized into four modules:
+The current public API is organized into four runtime areas:
 
-- `trackflow.beh` for behavior screens, trial rows, data output, recovery, and
-  preflight checks
+- `trackflow.beh` for behavior helpers organized into stimuli, screens,
+  timelines, trials, trial planning, data output, recovery, global researcher
+  keys, and preflight checks
 - `trackflow.gaze` for EyeLink setup, tracker wrappers, and gaze monitoring
 - `trackflow.eeg` for parallel-port marker senders and debug marker senders
 - `trackflow.sync` for explicit EEG and EyeLink sync records
@@ -54,16 +55,16 @@ from trackflow import beh
 
 
 win = visual.Window(size=(1024, 768), units="deg")
-fix = beh.make_fixation(win, size=0.5, color="#000000")
+fix = beh.stimuli.make_fixation(win, size=0.5, color="#000000")
 
-screen = beh.make_screen(
+screen = beh.screens.make_screen(
     stimuli=[fix],
     duration=0.5,
     response=None,
     screen_name="fixation",
 )
 
-timeline = beh.setup_timeline(raw_data_file="data/S01_screen_data.jsonl")
+timeline = beh.timeline.setup_timeline(raw_data_file="data/S01_screen_data.jsonl")
 timeline.show_screen(win, screen)
 ```
 
@@ -77,10 +78,10 @@ should remain visible in the experiment script or project settings.
 
 ### Simple screens are convenience helpers
 
-`beh.make_screen()` is useful for simple fixed-duration screens and first-key
-responses. For complex trials, write a normal PsychoPy trial function or class
-and return `beh.TrialOutcome` so `Timeline` can still handle output and
-recovery bookkeeping.
+`beh.screens.make_screen()` is useful for simple fixed-duration screens and
+first-key responses. For complex trials, write a normal PsychoPy trial function
+or class and return `beh.trials.TrialOutcome` so `beh.timeline.Timeline` can
+still handle output and recovery bookkeeping.
 
 ### Sync records are explicit
 

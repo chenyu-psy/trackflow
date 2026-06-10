@@ -13,6 +13,9 @@ from typing import Any, List, Optional
 from . import _psychopy
 
 
+__all__ = ["PreflightResult", "check_preflight", "preflight_or_raise"]
+
+
 @dataclass
 class PreflightResult:
     """Result from checking enabled runtime subsystems.

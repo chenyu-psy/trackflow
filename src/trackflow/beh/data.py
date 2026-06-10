@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 
+__all__ = ["DataRows"]
+
+
 class DataRows:
     """Small query view over completed behavior rows.
 

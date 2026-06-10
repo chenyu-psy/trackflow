@@ -26,6 +26,9 @@ from .recovery import mark_plan_completed, save_meta_state
 from ..sync import SyncController
 
 
+__all__ = ["Timeline", "setup_timeline"]
+
+
 class Timeline:
     """Behavior timeline with runtime state and output bookkeeping.
 

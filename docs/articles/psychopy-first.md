@@ -7,7 +7,7 @@ or saved data meanings.
 
 ## Use simple screens when they fit
 
-Use `beh.make_screen()` for screens with a small, explicit contract:
+Use `beh.screens.make_screen()` for screens with a small, explicit contract:
 
 - draw one or more stimuli
 - optionally collect one keyboard response
@@ -15,7 +15,7 @@ Use `beh.make_screen()` for screens with a small, explicit contract:
 - save one raw screen row
 
 ```python
-screen = beh.make_screen(
+screen = beh.screens.make_screen(
     stimuli=[fixation],
     duration=0.5,
     response=None,
@@ -33,8 +33,8 @@ When a trial needs custom frame logic, mouse responses, multiple response
 streams, custom clocks, `win.callOnFlip(...)`, or task-specific branching,
 write the PsychoPy loop directly.
 
-Return a `beh.TrialOutcome` so `trackflow` can still write raw rows, summaries,
-and recovery metadata.
+Return a `beh.trials.TrialOutcome` so `trackflow` can still write raw rows,
+summaries, and recovery metadata.
 
 ```python
 from trackflow import beh
@@ -47,7 +47,7 @@ class SearchTrial:
         # Ordinary PsychoPy drawing, flipping, response collection, and sync
         # logic live here so the procedure remains inspectable.
 
-        return beh.TrialOutcome(
+        return beh.trials.TrialOutcome(
             status="accepted",
             reason="no",
             row={"plan_id": row["plan_id"]},
