@@ -7,6 +7,9 @@ import unittest
 from unittest import mock
 
 from trackflow import beh
+from trackflow.beh import keys as beh_keys
+from trackflow.beh import preflight as beh_preflight
+from trackflow.beh import recovery as beh_recovery
 from trackflow.beh import screens as beh_screens
 from trackflow.beh import timeline as beh_timeline
 
@@ -462,7 +465,7 @@ class BehaviorScreenTests(unittest.TestCase):
             response=None,
             screen_name="researcher_pause",
         )
-        action = beh.keys.GlobalKeyAction(
+        action = beh_keys.GlobalKeyAction(
             name="custom_pause",
             keys=["F10"],
             set_state={"pause_experiment": True},
@@ -483,14 +486,14 @@ class BehaviorScreenTests(unittest.TestCase):
 
     def test_preflight_checks_only_enabled_subsystems(self):
         """Preflight should skip disabled hardware checks."""
-        result = beh.preflight.check_preflight(require_psychopy=False)
+        result = beh_preflight.check_preflight(require_psychopy=False)
 
         self.assertTrue(result.passed)
         self.assertEqual(result.issues, [])
 
     def test_preflight_reports_enabled_eeg_problem(self):
         """Enabled EEG sender must provide the marker send method."""
-        result = beh.preflight.check_preflight(require_psychopy=False, eeg=object())
+        result = beh_preflight.check_preflight(require_psychopy=False, eeg=object())
 
         self.assertFalse(result.passed)
         self.assertIn("EEG sender must provide send(code).", result.issues)
@@ -544,11 +547,11 @@ class BehaviorScreenTests(unittest.TestCase):
     def test_meta_state_tracks_remaining_rows_by_accepted_plan_id(self):
         """Recovery should filter only rows whose plan IDs were accepted."""
         rows = [{"plan_id": "exp_0001"}, {"plan_id": "exp_0002"}]
-        state = beh.recovery.make_meta_state(session_info={"subject": "S01"}, planned_rows=rows)
+        state = beh_recovery.make_meta_state(session_info={"subject": "S01"}, planned_rows=rows)
 
-        beh.recovery.mark_plan_completed(state, "exp_0001")
+        beh_recovery.mark_plan_completed(state, "exp_0001")
 
-        self.assertEqual(beh.recovery.remaining_plan_rows(state), [{"plan_id": "exp_0002"}])
+        self.assertEqual(beh_recovery.remaining_plan_rows(state), [{"plan_id": "exp_0002"}])
 
     def test_timeline_writes_raw_summary_and_completion_state(self):
         """Accepted trials should write raw JSONL, summary CSV, and meta completion."""
@@ -556,7 +559,7 @@ class BehaviorScreenTests(unittest.TestCase):
             raw_path = f"{tmpdir}/raw.jsonl"
             summary_path = f"{tmpdir}/summary.csv"
             meta_path = f"{tmpdir}/meta.json"
-            meta_state = beh.recovery.make_meta_state(planned_rows=[{"plan_id": "exp_0001"}])
+            meta_state = beh_recovery.make_meta_state(planned_rows=[{"plan_id": "exp_0001"}])
             screen = beh.screens.make_screen(
                 stimuli=[FakeStim()],
                 duration=1.0,
@@ -588,7 +591,7 @@ class BehaviorScreenTests(unittest.TestCase):
                 raw_rows = [json.loads(line) for line in f]
             with open(summary_path, "r", encoding="utf-8", newline="") as f:
                 summary_rows = list(csv.DictReader(f))
-            loaded_meta = beh.recovery.load_meta_state(meta_path)
+            loaded_meta = beh_recovery.load_meta_state(meta_path)
 
             self.assertEqual(raw_rows[0]["screen_name"], "probe")
             self.assertEqual(summary_rows[0]["plan_id"], "exp_0001")
@@ -626,7 +629,7 @@ class BehaviorScreenTests(unittest.TestCase):
             {"plan_id": "exp_0001", "block_id": 1},
             {"plan_id": "exp_0002", "block_id": 1},
         ]
-        state = beh.recovery.make_meta_state(planned_rows=rows)
+        state = beh_recovery.make_meta_state(planned_rows=rows)
         timeline = beh.timeline.setup_timeline(meta_state=state, seed=1)
 
         timeline.run(FakeWindow(), FakeTrialRunner(), rows=rows, replace_on_reject=True)

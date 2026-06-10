@@ -2,8 +2,8 @@
 
 The API reference is grouped by runtime responsibility.
 
-- [Behavior](beh.md): stimuli, screens, timelines, trials, trial planning,
-  data output, recovery, preflight checks, and global researcher keys
+- [Behavior](beh.md): stimuli, screens, trials, timelines, trial planning, and
+  data output
 - [Eye tracking](gaze.md): EyeLink configuration, setup, wrappers, and gaze
   monitoring
 - [EEG](eeg.md): parallel-port and debug marker senders

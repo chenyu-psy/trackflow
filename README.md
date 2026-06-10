@@ -13,8 +13,7 @@ procedure in ordinary PsychoPy scripts.
 The current package version is `0.1.0`. It includes:
 
 - `trackflow.beh` for behavior helpers organized into stimuli, screens,
-  timelines, trials, trial planning, data output, recovery, global researcher
-  keys, and preflight checks
+  trials, timelines, trial planning, and data output
 - `trackflow.gaze` for EyeLink setup, wrappers, and gaze-break monitoring
 - `trackflow.eeg` for parallel-port marker sending and debug marker senders
 - `trackflow.sync` for explicit EEG and EyeLink sync records
