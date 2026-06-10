@@ -12,8 +12,10 @@ on:
 
 jobs:
   checks:
-    name: Tests, lint, format, and docs
+    name: Tests, lint, and docs
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
 
     steps:
       - name: Check out repository
@@ -30,13 +32,13 @@ jobs:
           python-version: "3.10"
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --only-group dev --no-install-project
 
       - name: Run tests
-        run: uv run pytest
+        run: uv run --no-sync pytest
 
       - name: Run lint checks
-        run: uv run ruff check src tests
+        run: uv run --no-sync ruff check src tests
 
       - name: Build documentation
-        run: uv run mkdocs build --strict
+        run: uv run --no-sync mkdocs build --strict
