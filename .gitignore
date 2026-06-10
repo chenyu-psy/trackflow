@@ -1,0 +1,26 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local environments and secrets
+.venv/
+.env
+.env.*
+
+# Local agent planning and instructions
+Plan.md
+AGENTS.md
+
+# Build, release, and documentation output
+dist/
+build/
+*.egg-info/
+site/
+
+# System and editor files
+.DS_Store
+.idea/
+.vscode/
