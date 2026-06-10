@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .. import _psychopy
+from .context import TrialInterrupted
 
 
 class Screen:
@@ -19,10 +20,11 @@ class Screen:
         Maximum screen duration in seconds. ``None`` means the screen must end
         through a key response.
     response : str, optional
-        Response mode: ``None`` or ``"key"``. Built-in button responses are
-        deferred until a later version.
-    keys : sequence[str], optional
-        Allowed keys for key response. ``None`` accepts any key.
+        Response mode: ``None`` or ``"key"``. Defaults to ``"key"``.
+    choices : sequence[str], optional
+        Allowed response choices for the selected response mode. For
+        ``response="key"``, these are PsychoPy key names. ``None`` accepts no
+        participant response choices.
     response_start : float, optional
         Seconds after screen onset before responses are accepted.
     end_on_response : bool, optional
@@ -32,69 +34,65 @@ class Screen:
     data : dict, optional
         Screen-level fields copied into the returned raw screen row. Use this
         for readable labels such as ``{"screen_name": "fixation"}``.
-    on_start, on_load, on_response, on_finish : callable, optional
+    on_start, on_load, on_frame, on_finish : callable, optional
         Lifecycle hooks receiving ``RunContext`` and the current raw row.
+        ``on_frame`` also receives the screen-relative elapsed time.
 
     Examples
     --------
     >>> timeline = setup_timeline(win=win)
-    >>> screen = timeline.make_screen(stimuli=[fix], duration=1.0, response="key", keys=["space"])
+    >>> screen = timeline.make_screen(stimuli=[fix], duration=1.0, response="key", choices=["space"])
     """
 
     def __init__(
         self,
         stimuli: Sequence[Any],
         duration: Optional[float] = None,
-        response: Optional[str] = None,
-        keys: Optional[Sequence[str]] = None,
-        choices: Optional[Any] = None,
+        response: Optional[str] = "key",
+        choices: Optional[Sequence[str]] = None,
         response_start: float = 0,
         end_on_response: bool = True,
         clear_events: bool = True,
         data: Optional[Dict[str, Any]] = None,
         on_start: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
         on_load: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
-        on_response: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
+        on_frame: Optional[Callable[[Any, Dict[str, Any], float], None]] = None,
         on_finish: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
     ) -> None:
         """Create and validate one screen specification."""
-        if choices is not None:
-            raise ValueError("button/clickable choices are not supported by the current trackflow.beh runtime.")
         self.stimuli = _validate_stimuli(stimuli)
         self.duration = _validate_optional_duration(duration)
         self.response = _validate_response_mode(response)
-        self.keys = _validate_keys(keys)
+        self.choices = _validate_choices(choices)
         self.response_start = _validate_response_start(response_start)
         self.end_on_response = bool(end_on_response)
         self.clear_events = bool(clear_events)
         self.data = dict(data or {})
         self.on_start = on_start
         self.on_load = on_load
-        self.on_response = on_response
+        self.on_frame = on_frame
         self.on_finish = on_finish
 
-        if self.duration is None and self.response is None:
-            raise ValueError("duration or response must be provided.")
-        if self.duration is None and not self.end_on_response:
-            raise ValueError("duration is required when end_on_response is False.")
+        _validate_screen_end_condition(self.duration, self.response, self.choices, self.end_on_response)
 
     def update(
         self,
         stimuli: Optional[Sequence[Any]] = None,
         duration: Optional[float] = None,
         response: Optional[str] = None,
-        keys: Optional[Sequence[str]] = None,
+        choices: Optional[Sequence[str]] = None,
         response_start: Optional[float] = None,
         end_on_response: Optional[bool] = None,
         clear_events: Optional[bool] = None,
         data: Optional[Dict[str, Any]] = None,
+        on_frame: Optional[Callable[[Any, Dict[str, Any], float], None]] = None,
     ) -> None:
         """Update screen settings in place.
 
         Parameters
         ----------
-        stimuli, duration, response, keys, response_start, end_on_response,
-        clear_events, data : optional
+        stimuli, duration, response, choices, response_start, end_on_response,
+        clear_events, data, on_frame : optional
             Screen settings to replace before a run starts. Omitted settings
             keep their current values.
 
@@ -110,8 +108,8 @@ class Screen:
             self.duration = _validate_optional_duration(duration)
         if response is not None:
             self.response = _validate_response_mode(response)
-        if keys is not None:
-            self.keys = _validate_keys(keys)
+        if choices is not None:
+            self.choices = _validate_choices(choices)
         if response_start is not None:
             self.response_start = _validate_response_start(response_start)
         if end_on_response is not None:
@@ -120,11 +118,10 @@ class Screen:
             self.clear_events = bool(clear_events)
         if data is not None:
             self.data = dict(data)
+        if on_frame is not None:
+            self.on_frame = on_frame
 
-        if self.duration is None and self.response is None:
-            raise ValueError("duration or response must be provided.")
-        if self.duration is None and not self.end_on_response:
-            raise ValueError("duration is required when end_on_response is False.")
+        _validate_screen_end_condition(self.duration, self.response, self.choices, self.end_on_response)
 
     def run(
         self,
@@ -156,74 +153,81 @@ class Screen:
             Raw screen row with response, RT, markers, and messages fields.
         """
         out = _make_screen_row(row, self.data, screen_index)
-        if self.on_start is not None:
-            _require_context(ctx, "on_start")
-            self.on_start(ctx, out)
-
-        core = _load_psychopy_core()
-        event = _load_psychopy_event()
-        if ctx is not None and hasattr(ctx.timeline, "register_global_keys"):
-            ctx.timeline.register_global_keys(event)
-        if self.clear_events:
-            event.clearEvents(eventType="keyboard")
-
         response_value = None
         rt = None
-        loaded = False
-        response_hook_called = False
-        start_time = core.getTime()
+        try:
+            if self.on_start is not None:
+                _require_context(ctx, "on_start")
+                self.on_start(ctx, out)
 
-        while True:
-            elapsed = core.getTime() - start_time
-            if self.duration is not None and elapsed >= self.duration:
-                break
+            core = _load_psychopy_core()
+            event = _load_psychopy_event()
+            if ctx is not None and hasattr(ctx.timeline, "register_global_keys"):
+                ctx.timeline.register_global_keys(event)
+            if self.clear_events:
+                event.clearEvents(eventType="keyboard")
 
-            _draw_visible_stimuli(self.stimuli, elapsed)
-            win.flip()
-            if not loaded:
-                loaded = True
-                if self.on_load is not None:
-                    _require_context(ctx, "on_load")
-                    self.on_load(ctx, out)
+            loaded = False
+            start_time = core.getTime()
 
-            if ctx is not None and hasattr(ctx.timeline, "handle_global_keys"):
-                if ctx.timeline.handle_global_keys(ctx, out, event):
+            while True:
+                elapsed = core.getTime() - start_time
+                if self.duration is not None and elapsed >= self.duration:
                     break
 
-            if elapsed >= self.response_start and response_value is None and self.response == "key":
-                response_value, rt = _collect_key_response(event, self.keys, start_time, core)
-                if response_value is not None:
-                    out["response"] = response_value
-                    out["rt"] = rt
-                    if not response_hook_called and self.on_response is not None:
-                        response_hook_called = True
-                        _require_context(ctx, "on_response")
-                        self.on_response(ctx, out)
+                _draw_visible_stimuli(self.stimuli, elapsed)
+                win.flip()
+                if not loaded:
+                    loaded = True
+                    if self.on_load is not None:
+                        _require_context(ctx, "on_load")
+                        self.on_load(ctx, out)
 
-            if response_value is not None and self.end_on_response:
-                break
+                if self.on_frame is not None:
+                    _require_context(ctx, "on_frame")
+                    self.on_frame(ctx, out, elapsed)
 
-        out["response"] = response_value
-        out["rt"] = rt
-        if self.on_finish is not None:
-            _require_context(ctx, "on_finish")
-            self.on_finish(ctx, out)
+                if ctx is not None and hasattr(ctx.timeline, "handle_global_keys"):
+                    if ctx.timeline.handle_global_keys(ctx, out, event):
+                        break
+
+                if elapsed >= self.response_start and response_value is None and self.response == "key":
+                    response_value, rt = _collect_key_response(event, self.choices, start_time, core)
+                    if response_value is not None:
+                        out["response"] = response_value
+                        out["rt"] = rt
+
+                if response_value is not None and self.end_on_response:
+                    break
+
+            out["response"] = response_value
+            out["rt"] = rt
+            if self.on_finish is not None:
+                _require_context(ctx, "on_finish")
+                self.on_finish(ctx, out)
+        except TrialInterrupted as err:
+            out["response"] = response_value
+            out["rt"] = rt
+            out["trial_status"] = "interrupted"
+            out["interruption"] = err.reason
+            out.update(err.data)
+            err.row = dict(out)
+            raise
         return out
 
 
 def _make_screen(
     stimuli: Sequence[Any],
     duration: Optional[float] = None,
-    response: Optional[str] = None,
-    keys: Optional[Sequence[str]] = None,
-    choices: Optional[Any] = None,
+    response: Optional[str] = "key",
+    choices: Optional[Sequence[str]] = None,
     response_start: float = 0,
     end_on_response: bool = True,
     clear_events: bool = True,
     data: Optional[Dict[str, Any]] = None,
     on_start: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
     on_load: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
-    on_response: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
+    on_frame: Optional[Callable[[Any, Dict[str, Any], float], None]] = None,
     on_finish: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
 ) -> Screen:
     """Create one validated screen-level presentation unit."""
@@ -231,7 +235,6 @@ def _make_screen(
         stimuli=stimuli,
         duration=duration,
         response=response,
-        keys=keys,
         choices=choices,
         response_start=response_start,
         end_on_response=end_on_response,
@@ -239,7 +242,7 @@ def _make_screen(
         data=data,
         on_start=on_start,
         on_load=on_load,
-        on_response=on_response,
+        on_frame=on_frame,
         on_finish=on_finish,
     )
 
@@ -293,11 +296,26 @@ def _validate_response_mode(response: Optional[str]) -> Optional[str]:
     return value
 
 
-def _validate_keys(keys: Optional[Sequence[str]]) -> Optional[List[str]]:
-    """Return allowed keys as strings, or ``None`` to accept any key."""
-    if keys is None:
+def _validate_choices(choices: Optional[Sequence[str]]) -> Optional[List[str]]:
+    """Return allowed response choices as strings, or ``None`` for no choices."""
+    if choices is None:
         return None
-    return [str(key) for key in keys]
+    return [str(choice) for choice in choices]
+
+
+def _validate_screen_end_condition(
+    duration: Optional[float],
+    response: Optional[str],
+    choices: Optional[Sequence[str]],
+    end_on_response: bool,
+) -> None:
+    """Raise when a screen has no possible end condition."""
+    if duration is None and response is None:
+        raise ValueError("duration or response must be provided.")
+    if duration is None and response == "key" and choices is None:
+        raise ValueError("duration is required when response='key' and choices is None.")
+    if duration is None and response == "key" and not end_on_response:
+        raise ValueError("duration is required when end_on_response is False.")
 
 
 def _make_screen_row(
@@ -331,12 +349,16 @@ def _draw_visible_stimuli(stimuli: Sequence[Any], elapsed: float) -> None:
         stim.draw()
 
 
-def _collect_key_response(event: Any, keys: Optional[List[str]], start_time: float, core: Any) -> Tuple[Any, Optional[float]]:
+def _collect_key_response(
+    event: Any,
+    choices: Optional[List[str]],
+    start_time: float,
+    core: Any,
+) -> Tuple[Any, Optional[float]]:
     """Return the first queued key response and RT, or ``(None, None)``."""
-    if keys is None:
-        pressed = event.getKeys()
-    else:
-        pressed = event.getKeys(keyList=keys)
+    if choices is None:
+        return None, None
+    pressed = event.getKeys(keyList=choices)
     if not pressed:
         return None, None
     return pressed[0], core.getTime() - start_time

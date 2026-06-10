@@ -23,9 +23,14 @@ The usual learning path is:
 3. Create stimuli with `beh.stimuli`.
 4. Create screens through timeline factory methods.
 5. Combine screens into trials through `timeline.make_trial(...)`.
-6. Run screens or trials with `timeline.run(..., trial_data=...)`.
+6. Run one screen or one trial at a time with
+   `timeline.run(..., trial_data=...)`.
 7. Query completed raw screen rows or summary rows through timeline data
    helpers.
+
+Use normal Python loops for multiple planned rows. Rejected or interrupted
+trials are recorded for auditability, but retry policy stays in experiment
+code.
 
 This structure keeps trial flow, stimulus timing, screen presentation,
 timeline bookkeeping, and data output visible instead of flattening them into

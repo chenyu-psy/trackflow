@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
-from .context import RunContext, TrialOutcome
+from .context import RunContext, TrialInterrupted, TrialOutcome
 
 
 class _Trial:
@@ -31,7 +31,20 @@ class _Trial:
             ctx.screen = screen
             if hasattr(ctx.timeline, "_prepare_screen_run"):
                 ctx.timeline._prepare_screen_run(screen)
-            screen_row = screen.run(ctx.win, screen_index=screen_index, row=ctx.trial_data, ctx=ctx)
+            try:
+                screen_row = screen.run(ctx.win, screen_index=screen_index, row=ctx.trial_data, ctx=ctx)
+            except TrialInterrupted as err:
+                if err.row is not None:
+                    screen_rows.append(dict(err.row))
+                if err.screen is not None and hasattr(ctx.timeline, "_run_feedback_screen"):
+                    ctx.timeline._run_feedback_screen(ctx, err.screen)
+                return TrialOutcome(
+                    status="interrupted",
+                    reason=err.reason,
+                    row=None,
+                    screen_rows=screen_rows,
+                    details=dict(err.data),
+                )
             screen_rows.append(screen_row)
             if hasattr(ctx.timeline, "_run_pending_action_screens"):
                 screen_rows.extend(

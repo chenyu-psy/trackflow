@@ -13,7 +13,8 @@ procedure in ordinary PsychoPy scripts.
 The current package version is `0.1.1`. It includes:
 
 - `trackflow.beh` for timeline-owned behavior helpers organized into
-  timelines, stimuli, screens, trials, trial planning, and data output
+  timelines, stimuli, screens, trials, trial planning, interruption status, and
+  data output
 - `trackflow.gaze` for EyeLink setup, wrappers, and gaze-break monitoring
 - `trackflow.eeg` for parallel-port marker sending and debug marker senders
 - `trackflow.sync` for explicit EEG and EyeLink sync records
@@ -52,12 +53,16 @@ fix = beh.stimuli.make_fixation(win, size=0.5, color="#000000")
 screen = timeline.make_screen(
     stimuli=[fix],
     duration=0.5,
-    response=None,
     data={"screen_name": "fixation"},
 )
 
 timeline.run(screen)
 ```
+
+`timeline.run(...)` runs exactly one screen or one trial-like object. Use a
+plain Python loop for planned trial-data rows, and use
+`return_status=True` only when experiment code needs to decide what to do after
+an accepted, rejected, or interrupted trial.
 
 For complex trials, write a normal PsychoPy object with `run(ctx)` and return
 a `beh.timeline.TrialOutcome` so `trackflow` can handle common output and

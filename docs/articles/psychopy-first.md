@@ -19,7 +19,6 @@ timeline = beh.timeline.setup_timeline(win=win)
 screen = timeline.make_screen(
     stimuli=[fixation],
     duration=0.5,
-    response=None,
     data={"screen_name": "fixation"},
 )
 timeline.run(screen)
@@ -27,6 +26,11 @@ timeline.run(screen)
 
 This is a convenience path for common screens. It should not force complex
 trials into a generic screen abstraction.
+
+For real-time monitoring during a screen, use `on_frame(ctx, data, elapsed)`.
+If a participant blinks, moves gaze outside the allowed region, or presses too
+early, the hook can call `ctx.break_trial(...)`. The interrupted trial is
+recorded, and experiment code can choose whether to retry, skip, or continue.
 
 ## Write normal PsychoPy for complex trials
 

@@ -187,7 +187,7 @@ class BehaviorScreenTests(unittest.TestCase):
             stimuli=[stim],
             duration=1.0,
             response="key",
-            keys=["space"],
+            choices=["space"],
         )
         timeline = beh.timeline.setup_timeline(win=win)
 
@@ -215,6 +215,71 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertEqual(win.flip_calls, 1)
         self.assertEqual(stim.draw_calls, 1)
 
+    def test_key_choices_filter_allowed_responses(self):
+        """Keyboard choices should ignore queued keys outside the allowed list."""
+        win = FakeWindow()
+        core = FakeCore([0.0, 0.0, 0.1, 0.2])
+        event = FakeEvent(key_batches=[["escape", "space"]])
+        screen = beh_timeline.Screen(
+            stimuli=[FakeStim()],
+            duration=1.0,
+            response="key",
+            choices=["space"],
+        )
+        timeline = beh.timeline.setup_timeline(win=win)
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                timeline.run(screen)
+
+        self.assertEqual(timeline.records[0]["response"], "space")
+        self.assertEqual(timeline.records[0]["rt"], 0.1)
+
+    def test_key_response_without_choices_waits_until_duration(self):
+        """choices=None should accept no participant keys and wait for duration."""
+        stim = FakeStim()
+        win = FakeWindow()
+        core = FakeCore([0.0, 0.0, 0.1, 0.4])
+        event = FakeEvent(key_batches=[["space"], ["other"]])
+        screen = beh_timeline.Screen(
+            stimuli=[stim],
+            duration=0.3,
+            response="key",
+            choices=None,
+        )
+        timeline = beh.timeline.setup_timeline(win=win)
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                timeline.run(screen)
+
+        self.assertIsNone(timeline.records[0]["response"])
+        self.assertIsNone(timeline.records[0]["rt"])
+        self.assertNotIn("pause_experiment", timeline.state)
+        self.assertEqual(win.flip_calls, 2)
+        self.assertEqual(stim.draw_calls, 2)
+
+    def test_explicit_no_response_mode_waits_until_duration(self):
+        """response=None should remain valid for explicit no-response screens."""
+        win = FakeWindow()
+        core = FakeCore([0.0, 0.0, 0.1, 0.4])
+        event = FakeEvent(key_batches=[["space"], ["other"]])
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.3, response=None)
+        timeline = beh.timeline.setup_timeline(win=win)
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                timeline.run(screen)
+
+        self.assertIsNone(timeline.records[0]["response"])
+        self.assertIsNone(timeline.records[0]["rt"])
+        self.assertEqual(win.flip_calls, 2)
+
+    def test_key_response_without_duration_requires_choices(self):
+        """A no-duration key screen needs choices so a participant response can end it."""
+        with self.assertRaisesRegex(ValueError, "choices is None"):
+            beh_timeline.Screen(stimuli=[FakeStim()], duration=None, response="key", choices=None)
+
     def test_end_on_response_false_waits_until_duration(self):
         """Fixed-duration screens should record only the first response."""
         stim = FakeStim()
@@ -225,7 +290,7 @@ class BehaviorScreenTests(unittest.TestCase):
             stimuli=[stim],
             duration=0.5,
             response="key",
-            keys=["space", "other"],
+            choices=["space", "other"],
             end_on_response=False,
         )
         timeline = beh.timeline.setup_timeline(win=win)
@@ -257,7 +322,7 @@ class BehaviorScreenTests(unittest.TestCase):
         win = FakeWindow()
         core = FakeCore([0.0, 0.0, 0.2, 0.4, 0.7])
         event = FakeEvent(key_batches=[[], [], []])
-        screen = beh_timeline.Screen(stimuli=[always, delayed], duration=0.5, response=None)
+        screen = beh_timeline.Screen(stimuli=[always, delayed], duration=0.5)
         timeline = beh.timeline.setup_timeline(win=win)
 
         with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
@@ -296,8 +361,9 @@ class BehaviorScreenTests(unittest.TestCase):
         timeline.meta_state = state
         trial = timeline.make_trial(screens=[screen], run_if=skip_trial)
 
-        timeline.run(trial, trial_data=[{"plan_id": "exp_0001"}])
+        result = timeline.run(trial, trial_data={"plan_id": "exp_0001"}, return_status=True)
 
+        self.assertTrue(result)
         self.assertEqual(calls, ["exp_0001"])
         self.assertEqual(timeline.records, [])
         self.assertEqual(state["completed_plan_ids"], ["exp_0001"])
@@ -312,7 +378,6 @@ class BehaviorScreenTests(unittest.TestCase):
         screen = beh_timeline.Screen(
             stimuli=[FakeStim()],
             duration=1.0,
-            response=None,
             data={"screen_name": "sample"},
             on_start=prepare_screen,
         )
@@ -323,7 +388,7 @@ class BehaviorScreenTests(unittest.TestCase):
 
         with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
-                timeline.run(trial, trial_data=[{"stim_file": "sample.png"}])
+                timeline.run(trial, trial_data={"stim_file": "sample.png"})
 
         self.assertEqual(timeline.records[0]["stim_file"], "sample.png")
         self.assertEqual(screen.duration, 0.2)
@@ -343,7 +408,6 @@ class BehaviorScreenTests(unittest.TestCase):
         screen = beh_timeline.Screen(
             stimuli=[FakeStim()],
             duration=0.2,
-            response=None,
             data={"screen_name": "sample"},
             on_load=mark_sample,
         )
@@ -373,7 +437,7 @@ class BehaviorScreenTests(unittest.TestCase):
             result = ctx.sync.send(code)
             data["markers"].extend(result.markers)
 
-        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, response=None, on_load=mark_condition)
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, on_load=mark_condition)
         timeline = beh.timeline.setup_timeline(win=FakeWindow(), eeg=eeg_sender)
         trial = timeline.make_trial(screens=[screen])
         core = FakeCore([0.0, 0.0, 0.2])
@@ -381,17 +445,17 @@ class BehaviorScreenTests(unittest.TestCase):
 
         with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
-                timeline.run(trial, trial_data=[{"condition": "right"}])
+                timeline.run(trial, trial_data={"condition": "right"})
 
         self.assertEqual(timeline.records[0]["markers"], [{"source": "eeg", "code": 42, "status": "sent"}])
         self.assertEqual(eeg_sender.sent, [42])
 
-    def test_on_response_runs_while_screen_continues(self):
-        """on_response should run after the first valid response without ending the screen."""
+    def test_on_finish_can_read_final_response_fields(self):
+        """on_finish should see response fields after built-in key collection."""
         calls = []
 
         def mark_response(ctx, data):
-            """Record response data at the response hook."""
+            """Record response data at the finish hook."""
             calls.append((data["response"], data["rt"], ctx.win.flip_calls))
             data["response_marked"] = True
 
@@ -399,9 +463,9 @@ class BehaviorScreenTests(unittest.TestCase):
             stimuli=[FakeStim()],
             duration=0.5,
             response="key",
-            keys=["space"],
+            choices=["space"],
             end_on_response=False,
-            on_response=mark_response,
+            on_finish=mark_response,
         )
         timeline = beh.timeline.setup_timeline(win=FakeWindow())
         core = FakeCore([0.0, 0.0, 0.2, 0.4, 0.6])
@@ -411,7 +475,7 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(screen)
 
-        self.assertEqual(calls, [("space", 0.2, 1)])
+        self.assertEqual(calls, [("space", 0.2, 2)])
         self.assertTrue(timeline.records[0]["response_marked"])
 
     def test_on_finish_can_edit_returned_row(self):
@@ -420,7 +484,7 @@ class BehaviorScreenTests(unittest.TestCase):
             """Add final row metadata."""
             data["finished"] = True
 
-        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, response=None, on_finish=finish_screen)
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, on_finish=finish_screen)
         timeline = beh.timeline.setup_timeline(win=FakeWindow())
         core = FakeCore([0.0, 0.0, 0.2])
         event = FakeEvent(key_batches=[[]])
@@ -438,19 +502,103 @@ class BehaviorScreenTests(unittest.TestCase):
         with mock.patch.object(beh_timeline_core, "_load_psychopy_visual") as visual_loader:
             visual_loader.return_value.TextStim = FakeShape
             visual_loader.return_value.ImageStim = FakeShape
-            text_screen = timeline.make_text_screen("Ready", duration=0.1, response=None)
-            image_screen = timeline.make_image_screen("sample.png", duration=0.1, response=None)
+            text_screen = timeline.make_text_screen("Ready", duration=0.1)
+            image_screen = timeline.make_image_screen("sample.png", duration=0.1)
 
         self.assertIsInstance(text_screen, beh_timeline.Screen)
         self.assertIsInstance(image_screen, beh_timeline.Screen)
         self.assertEqual(text_screen.data["screen_name"], "text")
         self.assertEqual(image_screen.data["screen_name"], "image")
+        self.assertEqual(len(text_screen.stimuli), 1)
+        self.assertEqual(len(image_screen.stimuli), 1)
         self.assertEqual(timeline.records, [])
 
-    def test_trial_data_dict_and_list_are_inherited_by_screen_rows(self):
-        """trial_data should run once for a dict and once per dict for a list."""
+    def test_text_image_helpers_forward_screen_and_stimulus_kwargs(self):
+        """Text/image helpers should delegate screen behavior to make_screen."""
+        calls = []
+
+        def mark_frame(ctx, data, elapsed):
+            """Record that the forwarded frame hook ran."""
+            calls.append(elapsed)
+
         timeline = beh.timeline.setup_timeline(win=FakeWindow())
-        screen = timeline.make_screen(stimuli=[FakeStim()], duration=0.1, response=None, data={"screen_name": "task"})
+        with mock.patch.object(beh_timeline_core, "_load_psychopy_visual") as visual_loader:
+            visual_loader.return_value.TextStim = FakeShape
+            visual_loader.return_value.ImageStim = FakeShape
+            text_screen = timeline.make_text_screen(
+                "Ready",
+                duration=0.5,
+                choices=["space"],
+                response_start=0.2,
+                end_on_response=False,
+                clear_events=False,
+                data={"phase": "instruction"},
+                on_frame=mark_frame,
+                text_kwargs={"height": 0.8, "color": "white"},
+            )
+            image_screen = timeline.make_image_screen(
+                "instruction.png",
+                duration=0.5,
+                image_kwargs={"size": (10, 6)},
+            )
+
+        self.assertEqual(text_screen.choices, ["space"])
+        self.assertEqual(text_screen.response_start, 0.2)
+        self.assertFalse(text_screen.end_on_response)
+        self.assertFalse(text_screen.clear_events)
+        self.assertEqual(text_screen.data["screen_name"], "text")
+        self.assertEqual(text_screen.data["phase"], "instruction")
+        self.assertIs(text_screen.on_frame, mark_frame)
+        self.assertEqual(text_screen.stimuli[0].drawable.kwargs["text"], "Ready")
+        self.assertEqual(text_screen.stimuli[0].drawable.kwargs["height"], 0.8)
+        self.assertEqual(text_screen.stimuli[0].drawable.kwargs["color"], "white")
+        self.assertEqual(image_screen.stimuli[0].drawable.kwargs["image"], "instruction.png")
+        self.assertEqual(image_screen.stimuli[0].drawable.kwargs["size"], (10, 6))
+
+    def test_text_image_helpers_add_optional_prompt(self):
+        """Prompt text should add one bottom prompt stimulus only when requested."""
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+
+        with mock.patch.object(beh_timeline_core, "_load_psychopy_visual") as visual_loader:
+            visual_loader.return_value.TextStim = FakeShape
+            visual_loader.return_value.ImageStim = FakeShape
+            text_screen = timeline.make_text_screen(
+                "Ready",
+                duration=0.1,
+                prompt_text="Press Space to continue",
+                prompt_kwargs={"pos": (0, -0.7), "height": 0.05},
+            )
+            image_screen = timeline.make_image_screen(
+                "instruction.png",
+                duration=0.1,
+                prompt_text="Press Space to continue",
+            )
+
+        self.assertEqual(len(text_screen.stimuli), 2)
+        self.assertEqual(text_screen.stimuli[1].label, "prompt")
+        self.assertEqual(text_screen.stimuli[1].drawable.kwargs["text"], "Press Space to continue")
+        self.assertEqual(text_screen.stimuli[1].drawable.kwargs["pos"], (0, -0.7))
+        self.assertEqual(text_screen.stimuli[1].drawable.kwargs["height"], 0.05)
+        self.assertEqual(len(image_screen.stimuli), 2)
+        self.assertEqual(image_screen.stimuli[1].drawable.kwargs["units"], "norm")
+        self.assertEqual(image_screen.stimuli[1].drawable.kwargs["pos"], (0, -0.85))
+
+    def test_text_image_helpers_require_end_condition(self):
+        """Instruction wrappers should preserve make_screen end-condition validation."""
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+
+        with mock.patch.object(beh_timeline_core, "_load_psychopy_visual") as visual_loader:
+            visual_loader.return_value.TextStim = FakeShape
+            visual_loader.return_value.ImageStim = FakeShape
+            with self.assertRaisesRegex(ValueError, "choices is None"):
+                timeline.make_text_screen("Ready")
+            with self.assertRaisesRegex(ValueError, "choices is None"):
+                timeline.make_image_screen("instruction.png")
+
+    def test_trial_data_dict_is_inherited_by_screen_rows(self):
+        """trial_data should run once for one dictionary."""
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+        screen = timeline.make_screen(stimuli=[FakeStim()], duration=0.1, data={"screen_name": "task"})
         trial = timeline.make_trial(screens=[screen])
         core = FakeCore([0.0, 0.0, 0.2, 0.2, 0.2, 0.4, 0.4, 0.4, 0.6])
         event = FakeEvent(key_batches=[[], [], []])
@@ -458,29 +606,143 @@ class BehaviorScreenTests(unittest.TestCase):
         with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(trial, trial_data={"condition": "practice"})
-                timeline.run(trial, trial_data=[{"condition": "left"}, {"condition": "right"}])
+                for row in [{"condition": "left"}, {"condition": "right"}]:
+                    timeline.run(trial, trial_data=row)
 
         self.assertEqual([row["condition"] for row in timeline.records], ["practice", "left", "right"])
         self.assertEqual([row["screen_index"] for row in timeline.records], [0, 0, 0])
 
-    def test_timeline_run_accepts_unit_sequences(self):
-        """Timeline should run a mixed sequence of screens and trials in order."""
+    def test_timeline_run_rejects_trial_data_lists(self):
+        """Multiple planned rows should be run with an explicit user loop."""
         timeline = beh.timeline.setup_timeline(win=FakeWindow())
-        first = timeline.make_screen(stimuli=[FakeStim()], duration=0.1, response=None, data={"screen_name": "first"})
-        second = timeline.make_screen(stimuli=[FakeStim()], duration=0.1, response=None, data={"screen_name": "second"})
-        trial = timeline.make_trial(screens=[second])
-        core = FakeCore([0.0, 0.0, 0.2, 0.2, 0.2, 0.4])
+        screen = timeline.make_screen(stimuli=[FakeStim()], duration=0.1)
+        trial = timeline.make_trial(screens=[screen])
+
+        with self.assertRaisesRegex(TypeError, "Loop over planned trial-data rows explicitly"):
+            timeline.run(trial, trial_data=[{"condition": "left"}])
+
+    def test_timeline_run_record_false_uses_context_without_saving_rows(self):
+        """record=False should run through the timeline without storing output rows."""
+        calls = []
+
+        def mark_break(ctx, data):
+            """Record that the screen had timeline context."""
+            calls.append((ctx.win, ctx.timeline, data["screen_name"]))
+            data["break_seen"] = True
+
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+        screen = timeline.make_screen(
+            stimuli=[FakeStim()],
+            duration=0.1,
+            data={"screen_name": "break"},
+            on_load=mark_break,
+        )
+        core = FakeCore([0.0, 0.0, 0.2])
+        event = FakeEvent(key_batches=[[]])
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                result = timeline.run(screen, record=False, return_status=True)
+
+        self.assertTrue(result)
+        self.assertEqual(calls, [(timeline.win, timeline, "break")])
+        self.assertEqual(timeline.records, [])
+        self.assertEqual(timeline.summary_records, [])
+
+    def test_on_frame_can_mutate_screen_row(self):
+        """on_frame should run inside the screen loop with elapsed time."""
+        calls = []
+
+        def mark_frame(ctx, data, elapsed):
+            """Store frame-level information in the current row."""
+            calls.append((ctx.timeline, elapsed))
+            data["frame_checked"] = True
+
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+        screen = timeline.make_screen(
+            stimuli=[FakeStim()],
+            duration=0.1,
+            on_frame=mark_frame,
+        )
+        core = FakeCore([0.0, 0.0, 0.2])
+        event = FakeEvent(key_batches=[[]])
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                timeline.run(screen)
+
+        self.assertEqual(calls, [(timeline, 0.0)])
+        self.assertTrue(timeline.records[0]["frame_checked"])
+
+    def test_break_trial_interrupts_current_trial_and_runs_feedback_screen(self):
+        """ctx.break_trial should stop later screens and show unrecorded feedback."""
+        state = beh_recovery.make_meta_state(planned_rows=[{"plan_id": "exp_0001"}])
+        feedback_stim = FakeStim()
+        later_stim = FakeStim()
+
+        def interrupt_trial(ctx, data, elapsed):
+            """Interrupt the trial with additional data."""
+            ctx.break_trial(
+                reason="eye_movement",
+                screen=feedback_screen,
+                data={"eye_x": 12.5, "eye_y": -3.0},
+            )
+
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), meta_state=state)
+        interrupting_screen = timeline.make_screen(
+            stimuli=[FakeStim()],
+            duration=1.0,
+            data={"screen_name": "sample"},
+            on_frame=interrupt_trial,
+        )
+        feedback_screen = timeline.make_screen(
+            stimuli=[feedback_stim],
+            duration=0.1,
+            data={"screen_name": "eye_feedback"},
+        )
+        later_screen = timeline.make_screen(
+            stimuli=[later_stim],
+            duration=0.1,
+            data={"screen_name": "response"},
+        )
+        trial = timeline.make_trial(screens=[interrupting_screen, later_screen])
+        core = FakeCore([0.0, 0.0, 0.0, 0.0, 0.2])
         event = FakeEvent(key_batches=[[], []])
 
         with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
-                timeline.run([first, trial])
+                result = timeline.run(
+                    trial,
+                    trial_data={"plan_id": "exp_0001"},
+                    return_status=True,
+                )
 
-        self.assertEqual([row["screen_name"] for row in timeline.records], ["first", "second"])
+        self.assertFalse(result)
+        self.assertEqual(len(timeline.records), 1)
+        row = timeline.records[0]
+        self.assertEqual(row["screen_name"], "sample")
+        self.assertEqual(row["trial_status"], "interrupted")
+        self.assertEqual(row["interruption"], "eye_movement")
+        self.assertEqual(row["rejection"], "no")
+        self.assertEqual(row["eye_x"], 12.5)
+        self.assertEqual(row["eye_y"], -3.0)
+        self.assertEqual(state["completed_plan_ids"], [])
+        self.assertEqual(feedback_stim.draw_calls, 1)
+        self.assertEqual(later_stim.draw_calls, 0)
+
+    def test_timeline_run_rejects_unit_sequences(self):
+        """Multiple units should be run with explicit calls."""
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+        first = timeline.make_screen(stimuli=[FakeStim()], duration=0.1, data={"screen_name": "first"})
+        second = timeline.make_screen(stimuli=[FakeStim()], duration=0.1, data={"screen_name": "second"})
+        trial = timeline.make_trial(screens=[second])
+
+        with self.assertRaisesRegex(TypeError, "Loop over units explicitly"):
+            timeline.run([first, trial])
 
     def test_f10_pause_global_action_sets_state_without_participant_response(self):
         """Researcher F10 should request pause without becoming a response."""
-        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.3, response="key", keys=["space"])
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.3, response="key", choices=["space"])
         timeline = beh.timeline.setup_timeline(win=FakeWindow())
         core = FakeCore([0.0, 0.0, 0.1, 0.4])
         event = FakeEvent(key_batches=[["f10"], []])
@@ -496,7 +758,7 @@ class BehaviorScreenTests(unittest.TestCase):
 
     def test_f12_quit_global_action_ends_screen_and_sets_state(self):
         """Researcher F12 should request quit and show a confirmation screen."""
-        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=5.0, response=None)
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=5.0)
         win = FakeWindow()
         timeline = beh.timeline.setup_timeline(win=win)
         core = FakeCore([0.0, 0.0, 0.1, 0.1, 0.1, 0.2])
@@ -517,7 +779,7 @@ class BehaviorScreenTests(unittest.TestCase):
 
     def test_global_key_conflict_is_checked_before_screen_runs(self):
         """Participant responses should not reuse researcher fallback keys."""
-        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=1.0, response="key", keys=["f10"])
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=1.0, response="key", choices=["f10"])
         timeline = beh.timeline.setup_timeline(win=FakeWindow())
 
         with self.assertRaises(ValueError):
@@ -525,7 +787,7 @@ class BehaviorScreenTests(unittest.TestCase):
 
     def test_modified_global_shortcuts_register_with_psychopy_event(self):
         """Ctrl/command shortcuts should use PsychoPy globalKeys callbacks."""
-        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, response=None)
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1)
         timeline = beh.timeline.setup_timeline(win=FakeWindow())
         core = FakeCore([0.0, 0.0, 0.2])
         event = FakeEvent(key_batches=[[]])
@@ -545,7 +807,6 @@ class BehaviorScreenTests(unittest.TestCase):
         followup = beh_timeline.Screen(
             stimuli=[FakeStim()],
             duration=0.1,
-            response=None,
             data={"screen_name": "researcher_pause"},
         )
         action = beh_keys.GlobalKeyAction(
@@ -555,7 +816,7 @@ class BehaviorScreenTests(unittest.TestCase):
             end_screen=True,
             screen=followup,
         )
-        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=5.0, response=None, data={"screen_name": "task"})
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=5.0, data={"screen_name": "task"})
         timeline = beh.timeline.setup_timeline(win=FakeWindow(), global_actions=[action])
         core = FakeCore([0.0, 0.0, 0.1, 0.1, 0.1, 0.3])
         event = FakeEvent(key_batches=[["f10"], []])
@@ -597,14 +858,13 @@ class BehaviorScreenTests(unittest.TestCase):
 
         self.assertEqual(rows, [{"trial_id": 2, "screen_index": 0}, {"trial_id": 2, "screen_index": 1}])
 
-    def test_button_responses_are_deferred_in_010(self):
-        """Built-in button response helpers are not part of the current behavior runtime."""
+    def test_button_response_mode_is_not_supported(self):
+        """Built-in response collection should stay limited to key/no-response modes."""
         with self.assertRaises(ValueError):
             beh_timeline.Screen(
                 stimuli=[FakeStim()],
                 duration=1.0,
                 response="button",
-                choices=["Yes", "No"],
             )
 
     def test_build_trial_rows_returns_plain_runtime_rows(self):
@@ -647,7 +907,7 @@ class BehaviorScreenTests(unittest.TestCase):
                 stimuli=[FakeStim()],
                 duration=1.0,
                 response="key",
-                keys=["space"],
+                choices=["space"],
                 data={"screen_name": "probe"},
             )
             timeline = beh.timeline.setup_timeline(
@@ -669,7 +929,11 @@ class BehaviorScreenTests(unittest.TestCase):
 
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
                 with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
-                    timeline.run(trial, trial_data=[{"plan_id": "exp_0001", "trial_id": 1}])
+                    result = timeline.run(
+                        trial,
+                        trial_data={"plan_id": "exp_0001", "trial_id": 1},
+                        return_status=True,
+                    )
 
             with open(raw_path, "r", encoding="utf-8") as f:
                 raw_rows = [json.loads(line) for line in f]
@@ -677,35 +941,23 @@ class BehaviorScreenTests(unittest.TestCase):
                 summary_rows = list(csv.DictReader(f))
             loaded_meta = beh_recovery.load_meta_state(meta_path)
 
+            self.assertTrue(result)
             self.assertEqual(raw_rows[0]["screen_name"], "probe")
             self.assertEqual(summary_rows[0]["plan_id"], "exp_0001")
             self.assertEqual(loaded_meta["completed_plan_ids"], ["exp_0001"])
 
-    def test_rejected_trial_is_written_and_retried_in_same_block(self):
-        """Rejected rows should not complete until the retry is accepted."""
+    def test_rejected_trial_is_written_without_completion_or_retry(self):
+        """Rejected rows should be auditable while retry policy stays user-managed."""
         class FakeTrialRunner:
-            """Trial-like object that rejects a row once, then accepts it."""
-
-            def __init__(self):
-                """Initialize per-plan call counts."""
-                self.calls = {}
+            """Trial-like object that rejects every run."""
 
             def run(self, ctx):
-                """Return a rejected outcome first and accepted outcome later."""
+                """Return a rejected outcome."""
                 row = ctx.trial_data
                 plan_id = row["plan_id"]
-                count = self.calls.get(plan_id, 0)
-                self.calls[plan_id] = count + 1
-                if plan_id == "exp_0001" and count == 0:
-                    return beh_timeline.TrialOutcome(
-                        status="rejected",
-                        reason="eye_movement",
-                        row={"plan_id": plan_id},
-                        screen_rows=[{"plan_id": plan_id, "block_id": row["block_id"]}],
-                    )
                 return beh_timeline.TrialOutcome(
-                    status="accepted",
-                    reason="no",
+                    status="rejected",
+                    reason="eye_movement",
                     row={"plan_id": plan_id},
                     screen_rows=[{"plan_id": plan_id, "block_id": row["block_id"]}],
                 )
@@ -715,13 +967,41 @@ class BehaviorScreenTests(unittest.TestCase):
             {"plan_id": "exp_0002", "block_id": 1},
         ]
         state = beh_recovery.make_meta_state(planned_rows=rows)
-        timeline = beh.timeline.setup_timeline(win=FakeWindow(), meta_state=state, seed=1)
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), meta_state=state)
 
-        timeline.run(FakeTrialRunner(), trial_data=rows, replace_on_reject=True)
+        result = timeline.run(FakeTrialRunner(), trial_data=rows[0], return_status=True)
+        default_result = timeline.run(FakeTrialRunner(), trial_data=rows[1])
 
         statuses = [row["trial_status"] for row in timeline.summary_records]
-        self.assertIn("rejected", statuses)
-        self.assertEqual(set(state["completed_plan_ids"]), {"exp_0001", "exp_0002"})
+        self.assertFalse(result)
+        self.assertIsNone(default_result)
+        self.assertEqual(statuses, ["rejected", "rejected"])
+        self.assertEqual(state["completed_plan_ids"], [])
+
+    def test_accepted_custom_trial_returns_true_and_marks_completion(self):
+        """Accepted custom trials should return True when status is requested."""
+        class FakeTrialRunner:
+            """Trial-like object that accepts one row."""
+
+            def run(self, ctx):
+                """Return an accepted outcome."""
+                row = ctx.trial_data
+                plan_id = row["plan_id"]
+                return beh_timeline.TrialOutcome(
+                    status="accepted",
+                    reason="no",
+                    row={"plan_id": plan_id},
+                    screen_rows=[{"plan_id": plan_id}],
+                )
+
+        row = {"plan_id": "exp_0001"}
+        state = beh_recovery.make_meta_state(planned_rows=[row])
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), meta_state=state)
+
+        result = timeline.run(FakeTrialRunner(), trial_data=row, return_status=True)
+
+        self.assertTrue(result)
+        self.assertEqual(state["completed_plan_ids"], ["exp_0001"])
 
 
 if __name__ == "__main__":
