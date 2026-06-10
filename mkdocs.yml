@@ -24,10 +24,8 @@ nav:
       - Package index: api/index.md
       - Behavior:
           - Overview: api/beh.md
-          - Stimuli: api/beh/stimuli.md
-          - Screens: api/beh/screens.md
-          - Trials: api/beh/trials.md
           - Timeline: api/beh/timeline.md
+          - Stimuli: api/beh/stimuli.md
           - Trial planning: api/beh/design.md
           - Data output: api/beh/data.md
       - Eye tracking: api/gaze.md

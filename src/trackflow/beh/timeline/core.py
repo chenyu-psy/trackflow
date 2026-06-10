@@ -1,39 +1,35 @@
-"""Timeline runtime for behavior screens and trials.
-
-The timeline owns in-memory rows, optional raw JSONL output, optional summary
-CSV output, meta-JSON completion state, and same-block retry scheduling.
-"""
+"""Timeline runtime, factories, and data bookkeeping."""
 
 from __future__ import annotations
 
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
-from . import _psychopy
-from .keys import (
+from .. import _psychopy
+from ..data import DataRows, SummaryWriter, append_jsonl
+from ..keys import (
     GlobalKeyAction,
     coerce_global_actions,
     fallback_key_map,
     find_response_key_conflicts,
     register_modified_shortcuts,
 )
-from .data import DataRows, SummaryWriter, append_jsonl
-from .screens import Screen, make_screen
-from .stimuli import wrap_stimulus
-from .trials import RunContext, Trial, TrialOutcome
-from .recovery import mark_plan_completed, save_meta_state
-from ..sync import SyncController
-
-
-__all__ = ["Timeline", "setup_timeline"]
+from ..recovery import mark_plan_completed, save_meta_state
+from ..stimuli import wrap_stimulus
+from ...sync import SyncController
+from .context import RunContext, TrialOutcome
+from .screen import Screen, _make_screen
+from .trial import _Trial
 
 
 class Timeline:
-    """Behavior timeline with runtime state and output bookkeeping.
+    """Behavior timeline with runtime factories, state, and output bookkeeping.
 
     Parameters
     ----------
+    win : object, optional
+        PsychoPy window used by screens created and run through this timeline.
     records : list[dict], optional
         Existing in-memory raw rows to append to.
     raw_data_file : str or pathlib.Path, optional
@@ -59,12 +55,14 @@ class Timeline:
 
     Examples
     --------
-    >>> timeline = Timeline(seed=1)
-    >>> timeline.show_screen(win, screen)
+    >>> timeline = Timeline(win=win, seed=1)
+    >>> screen = timeline.make_screen(stimuli=[fix], duration=0.5)
+    >>> timeline.run(screen, trial_data={"condition": "practice"})
     """
 
     def __init__(
         self,
+        win: Optional[Any] = None,
         records: Optional[List[Dict[str, Any]]] = None,
         raw_data_file: Optional[Any] = None,
         summary_file: Optional[Any] = None,
@@ -79,6 +77,7 @@ class Timeline:
         use_default_global_actions: bool = True,
     ) -> None:
         """Create a timeline with optional file outputs."""
+        self.win = win
         self.records: List[Dict[str, Any]] = records if records is not None else []
         self.summary_records: List[Dict[str, Any]] = []
         self.raw_data_file = Path(raw_data_file) if raw_data_file is not None else None
@@ -100,128 +99,205 @@ class Timeline:
         self._pending_action_screens: List[Screen] = []
         self._summary_writer = SummaryWriter(self.summary_file) if self.summary_file is not None else None
 
-    def show_screen(self, win: Any, screen: Screen) -> None:
-        """Present one screen and store its raw response row.
+    def make_screen(
+        self,
+        stimuli: Sequence[Any],
+        duration: Optional[float] = None,
+        response: Optional[str] = None,
+        keys: Optional[Sequence[str]] = None,
+        choices: Optional[Any] = None,
+        response_start: float = 0,
+        end_on_response: bool = True,
+        clear_events: bool = True,
+        data: Optional[Dict[str, Any]] = None,
+        on_start: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
+        on_load: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
+        on_response: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
+        on_finish: Optional[Callable[[Any, Dict[str, Any]], None]] = None,
+    ) -> Screen:
+        """Create one screen owned by this timeline's runtime context.
 
         Parameters
         ----------
-        win : psychopy.visual.Window
-            PsychoPy window used for drawing and flipping.
-        screen : Screen
-            Screen specification created by ``make_screen``.
+        stimuli : sequence
+            Stimulus-like objects with ``draw()``. Objects with
+            ``is_visible(elapsed)`` may control their own screen-relative
+            visibility.
+        duration : float, optional
+            Maximum screen duration in seconds. ``None`` means the screen must
+            end through a response.
+        response : str, optional
+            Response mode. Use ``None`` for no built-in response collection or
+            ``"key"`` for keyboard responses.
+        keys : sequence[str], optional
+            Allowed keyboard responses when ``response="key"``. ``None``
+            accepts any key.
+        choices : object, optional
+            Reserved for future button/clickable responses. Passing a value
+            currently raises ``ValueError``.
+        response_start : float, optional
+            Seconds after screen onset before key responses are accepted.
+        end_on_response : bool, optional
+            Whether the screen ends immediately after the first accepted
+            response.
+        clear_events : bool, optional
+            Whether keyboard events are cleared before the screen starts.
+        data : dict, optional
+            Static screen-level fields copied into each raw screen row.
+        on_start, on_load, on_response, on_finish : callable, optional
+            Lifecycle hooks receiving ``(ctx, data)``. ``data`` is the mutable
+            raw screen row. ``on_load`` runs after the first flip, and
+            ``on_response`` runs after the first accepted response.
 
         Returns
         -------
-        None
-            Appends one raw row to ``self.records``.
+        Screen
+            Screen that can be passed to ``timeline.run(...)`` or
+            ``timeline.make_trial(screens=[...])``.
         """
-        ctx = RunContext(
-            win=win,
-            timeline=self,
-            params=self.params,
-            state=self.state,
-            row={},
-            screen=screen,
-            sync=self.sync,
+        return _make_screen(
+            stimuli=stimuli,
+            duration=duration,
+            response=response,
+            keys=keys,
+            choices=choices,
+            response_start=response_start,
+            end_on_response=end_on_response,
+            clear_events=clear_events,
+            data=data,
+            on_start=on_start,
+            on_load=on_load,
+            on_response=on_response,
+            on_finish=on_finish,
         )
-        self._prepare_screen_run(screen)
-        if screen.run_if is not None and not bool(screen.run_if(ctx)):
-            return None
-        row = screen.run(win, screen_index=len(self.records), row={}, ctx=ctx)
-        self._record_screen_row(row)
-        self._run_pending_action_screens(win, base_row={}, record=True)
 
-    def show_text_screen(
+    def make_text_screen(
         self,
-        win: Any,
         text: str,
         duration: Optional[float] = None,
         response: Optional[str] = "key",
         keys: Optional[Sequence[str]] = ("space",),
+        data: Optional[Dict[str, Any]] = None,
         **text_kwargs: Any,
-    ) -> None:
-        """Show a simple text instruction screen.
+    ) -> Screen:
+        """Create a text screen without running it.
 
         Parameters
         ----------
-        win : psychopy.visual.Window
-            PsychoPy window used for drawing.
         text : str
-            Text displayed at the center of the screen.
+            Text displayed by the PsychoPy ``TextStim``.
         duration : float, optional
-            Maximum screen duration in seconds.
+            Maximum screen duration in seconds. ``None`` means the screen must
+            end through a response.
         response : str, optional
-            Response mode passed to ``make_screen``.
+            Response mode forwarded to ``make_screen``. Defaults to ``"key"``.
         keys : sequence[str], optional
-            Allowed keys for key response.
+            Allowed keyboard responses. Defaults to ``("space",)``.
+        data : dict, optional
+            Screen-level fields copied into each raw row. Defaults to
+            ``{"screen_name": "text"}``.
         **text_kwargs
-            Extra arguments forwarded to ``psychopy.visual.TextStim``.
+            Additional keyword arguments forwarded to
+            ``psychopy.visual.TextStim``.
 
         Returns
         -------
-        None
-            Appends one raw row to ``self.records``.
+        Screen
+            Text screen that writes data only when run through the timeline.
         """
+        win = self._require_window()
         visual = _load_psychopy_visual()
         text_stim = visual.TextStim(win, text=str(text), **text_kwargs)
         stim = wrap_stimulus(text_stim, label="text")
-        screen = make_screen(stimuli=[stim], duration=duration, response=response, keys=keys, screen_name="text")
-        self.show_screen(win, screen)
+        screen_data = {"screen_name": "text", **dict(data or {})}
+        return self.make_screen(stimuli=[stim], duration=duration, response=response, keys=keys, data=screen_data)
 
-    def show_image_screen(
+    def make_image_screen(
         self,
-        win: Any,
         image: Any,
         duration: Optional[float] = None,
         response: Optional[str] = "key",
         keys: Optional[Sequence[str]] = ("space",),
+        data: Optional[Dict[str, Any]] = None,
         **image_kwargs: Any,
-    ) -> None:
-        """Show a simple image instruction screen.
+    ) -> Screen:
+        """Create an image screen without running it.
 
         Parameters
         ----------
-        win : psychopy.visual.Window
-            PsychoPy window used for drawing.
         image : object
-            Image source passed to ``psychopy.visual.ImageStim``.
+            Image path or image object forwarded to ``psychopy.visual.ImageStim``.
         duration : float, optional
-            Maximum screen duration in seconds.
+            Maximum screen duration in seconds. ``None`` means the screen must
+            end through a response.
         response : str, optional
-            Response mode passed to ``make_screen``.
+            Response mode forwarded to ``make_screen``. Defaults to ``"key"``.
         keys : sequence[str], optional
-            Allowed keys for key response.
+            Allowed keyboard responses. Defaults to ``("space",)``.
+        data : dict, optional
+            Screen-level fields copied into each raw row. Defaults to
+            ``{"screen_name": "image"}``.
         **image_kwargs
-            Extra arguments forwarded to ``psychopy.visual.ImageStim``.
+            Additional keyword arguments forwarded to
+            ``psychopy.visual.ImageStim``.
 
         Returns
         -------
-        None
-            Appends one raw row to ``self.records``.
+        Screen
+            Image screen that writes data only when run through the timeline.
         """
+        win = self._require_window()
         visual = _load_psychopy_visual()
         image_stim = visual.ImageStim(win, image=str(image), **image_kwargs)
         stim = wrap_stimulus(image_stim, label="image")
-        screen = make_screen(stimuli=[stim], duration=duration, response=response, keys=keys, screen_name="image")
-        self.show_screen(win, screen)
+        screen_data = {"screen_name": "image", **dict(data or {})}
+        return self.make_screen(stimuli=[stim], duration=duration, response=response, keys=keys, data=screen_data)
 
-    def run(
+    def make_trial(
         self,
-        win: Any,
-        unit: Any,
-        rows: Optional[Sequence[Dict[str, Any]]] = None,
-        replace_on_reject: bool = False,
-    ) -> None:
-        """Run one screen or a trial over planned rows.
+        screens: Sequence[Any],
+        data_format: Optional[Callable[[List[Dict[str, Any]]], Dict[str, Any]]] = None,
+        run_if: Optional[Callable[[RunContext], bool]] = None,
+    ) -> Any:
+        """Create one ordered screen group in presentation order.
 
         Parameters
         ----------
-        win : psychopy.visual.Window
-            PsychoPy window.
-        unit : Screen or Trial-like object
-            Screen to show once, or trial object with ``run(timeline, win, row)``.
-        rows : sequence[dict], optional
-            Planned rows for trial execution.
+        screens : sequence
+            Screens to run in order for each trial-data dictionary.
+        data_format : callable, optional
+            Function that receives one trial's raw screen rows and returns one
+            summary row.
+        run_if : callable, optional
+            Predicate receiving ``RunContext``. When it returns ``False``, the
+            entire trial is skipped, no raw rows are saved, and the trial is
+            treated as accepted for completion tracking.
+
+        Returns
+        -------
+        object
+            Timeline-owned trial-like object that can be passed to
+            ``timeline.run(...)``.
+        """
+        return _Trial(screens=screens, data_format=data_format, run_if=run_if)
+
+    def run(
+        self,
+        unit: Any,
+        trial_data: Optional[Any] = None,
+        replace_on_reject: bool = False,
+    ) -> None:
+        """Run one screen, trial-like object, or unit sequence over trial data.
+
+        Parameters
+        ----------
+        unit : Screen or trial-like object
+            Screen, object with ``run(ctx)``, or a sequence of units. A screen
+            is run as a one-screen trial.
+        trial_data : dict or sequence[dict], optional
+            ``None`` runs once with empty data. A dictionary runs once and is
+            copied into every screen row. A sequence of dictionaries runs once
+            per dictionary.
         replace_on_reject : bool, optional
             Whether rejected trials should be retried within the same block.
 
@@ -230,23 +306,29 @@ class Timeline:
         None
             Writes rows and updates timeline state in place.
         """
-        if isinstance(unit, Screen):
-            self.show_screen(win, unit)
-            return
-        if rows is None:
-            outcome = self._run_one_trial(unit, win, {})
-            self._record_trial_outcome(outcome, {})
+        self._require_window()
+        if _is_unit_sequence(unit):
+            for item in unit:
+                self.run(item, trial_data=trial_data, replace_on_reject=replace_on_reject)
             return
 
-        pending = [dict(row) for row in rows]
+        trial = self._coerce_trial_unit(unit)
+        if trial_data is None:
+            data_items = [{}]
+        elif isinstance(trial_data, dict):
+            data_items = [dict(trial_data)]
+        else:
+            data_items = [dict(item) for item in trial_data]
+
+        pending = data_items
         while pending:
-            row = pending.pop(0)
-            outcome = self._run_one_trial(unit, win, row)
-            self._record_trial_outcome(outcome, row)
+            data = pending.pop(0)
+            outcome = self._run_one_trial(trial, data)
+            self._record_trial_outcome(outcome, data)
             if outcome.is_rejected():
                 if not replace_on_reject:
                     raise RuntimeError("Trial was rejected, but replace_on_reject is False.")
-                self._insert_retry(pending, row)
+                self._insert_retry(pending, data)
 
     def get_data(self, kind: str = "raw", **filters: Any) -> DataRows:
         """Return completed rows matching field filters.
@@ -297,22 +379,7 @@ class Timeline:
         raise ValueError("unit must be 'screen', 'trial', 'block', or 'session'.")
 
     def handle_global_keys(self, ctx: RunContext, data: Dict[str, Any], event: Any) -> bool:
-        """Apply a queued or polled researcher global-key action.
-
-        Parameters
-        ----------
-        ctx : RunContext
-            Current behavior runtime context.
-        data : dict
-            Mutable raw screen row for the current screen.
-        event : psychopy.event module
-            Event module used to poll function-key fallbacks.
-
-        Returns
-        -------
-        bool
-            ``True`` when the current screen should end after the action.
-        """
+        """Apply a queued or polled researcher global-key action."""
         action = self._pop_queued_global_action()
         if action is None:
             action = self._poll_fallback_action(event)
@@ -375,75 +442,38 @@ class Timeline:
 
     def _run_pending_action_screens(
         self,
-        win: Any,
-        base_row: Dict[str, Any],
+        ctx: RunContext,
         record: bool = False,
         screen_index_start: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """Run screens requested by global-key actions.
-
-        Parameters
-        ----------
-        win : psychopy.visual.Window
-            Window used to show the follow-up screen.
-        base_row : dict
-            Trial/session fields inherited by the follow-up screen.
-        record : bool, optional
-            Whether rows should be saved immediately. Trial runs collect rows
-            first and let ``_record_trial_outcome`` save them once.
-        screen_index_start : int, optional
-            Screen index assigned to the first follow-up screen.
-
-        Returns
-        -------
-        list[dict]
-            Raw rows produced by action-triggered screens.
-        """
+        """Run screens requested by global-key actions."""
         rows = []
         while self._pending_action_screens:
             screen = self._pending_action_screens.pop(0)
-            ctx = RunContext(
-                win=win,
+            screen_ctx = RunContext(
+                win=ctx.win,
                 timeline=self,
+                trial_data=dict(ctx.trial_data),
                 params=self.params,
                 state=self.state,
-                row=dict(base_row),
                 screen=screen,
                 sync=self.sync,
             )
             self._prepare_screen_run(screen)
-            if screen.run_if is not None and not bool(screen.run_if(ctx)):
-                continue
             if screen_index_start is None:
                 screen_index = len(self.records)
             else:
                 screen_index = screen_index_start + len(rows)
-            row = screen.run(win, screen_index=screen_index, row=base_row, ctx=ctx)
+            row = screen.run(ctx.win, screen_index=screen_index, row=screen_ctx.trial_data, ctx=screen_ctx)
             if record:
                 self._record_screen_row(row)
             rows.append(row)
         return rows
 
-    def _run_one_trial(self, unit: Any, win: Any, row: Dict[str, Any]) -> TrialOutcome:
-        """Run a trial-like unit and normalize its outcome.
-
-        Parameters
-        ----------
-        unit : object
-            ``Trial`` or object with ``run(timeline, win, row)``.
-        win : psychopy.visual.Window
-            Window used by the trial.
-        row : dict
-            Planned trial row.
-
-        Returns
-        -------
-        TrialOutcome
-            Normalized accepted or rejected trial outcome.
-        """
-        if isinstance(unit, Trial):
-            return unit.run(self, win, row)
-        outcome = unit.run(self, win, row)
+    def _run_one_trial(self, unit: Any, trial_data: Dict[str, Any]) -> TrialOutcome:
+        """Run a trial-like unit and normalize its outcome."""
+        ctx = self._make_run_context(trial_data)
+        outcome = unit.run(ctx)
         if isinstance(outcome, TrialOutcome):
             return outcome
         if isinstance(outcome, dict):
@@ -454,23 +484,37 @@ class Timeline:
                 screen_rows=list(outcome.get("screen_rows", [])),
                 details=dict(outcome.get("details", {})),
             )
-        raise TypeError("trial.run(...) must return a TrialOutcome or dictionary.")
+        raise TypeError("trial.run(ctx) must return a TrialOutcome or dictionary.")
+
+    def _make_run_context(self, trial_data: Dict[str, Any]) -> RunContext:
+        """Create the runtime context for one trial run."""
+        return RunContext(
+            win=self._require_window(),
+            timeline=self,
+            trial_data=dict(trial_data),
+            params=self.params,
+            state=self.state,
+            sync=self.sync,
+        )
+
+    def _coerce_trial_unit(self, unit: Any) -> Any:
+        """Return a trial-like object with ``run(ctx)``."""
+        if isinstance(unit, Screen):
+            return self.make_trial(screens=[unit])
+        if isinstance(unit, _Trial):
+            return unit
+        if hasattr(unit, "run") and callable(unit.run):
+            return unit
+        raise TypeError("unit must be a Screen, trial-like object, or sequence of those units.")
+
+    def _require_window(self) -> Any:
+        """Return the configured PsychoPy window or raise a clear error."""
+        if self.win is None:
+            raise RuntimeError("Timeline requires win=. Create it with setup_timeline(win=win).")
+        return self.win
 
     def _record_trial_outcome(self, outcome: TrialOutcome, planned_row: Dict[str, Any]) -> None:
-        """Write raw and summary rows for one trial outcome.
-
-        Parameters
-        ----------
-        outcome : TrialOutcome
-            Trial result returned by the trial runner.
-        planned_row : dict
-            Planned row used for accepted-only completion tracking.
-
-        Returns
-        -------
-        None
-            Updates memory, optional files, and optional meta state.
-        """
+        """Write raw and summary rows for one trial outcome."""
         rejected = outcome.is_rejected()
         for screen_row in outcome.screen_rows:
             row = dict(screen_row)
@@ -488,18 +532,7 @@ class Timeline:
             self._mark_completed(planned_row, outcome.row)
 
     def _record_screen_row(self, row: Dict[str, Any]) -> None:
-        """Append one raw screen row to memory and optional JSONL output.
-
-        Parameters
-        ----------
-        row : dict
-            Completed screen row.
-
-        Returns
-        -------
-        None
-            Adds default sync containers and writes JSONL when configured.
-        """
+        """Append one raw screen row to memory and optional JSONL output."""
         out_row = dict(row)
         out_row.setdefault("markers", [])
         out_row.setdefault("messages", [])
@@ -508,38 +541,14 @@ class Timeline:
             append_jsonl(self.raw_data_file, out_row)
 
     def _record_summary_row(self, row: Dict[str, Any]) -> None:
-        """Append one trial summary row to memory and optional CSV output.
-
-        Parameters
-        ----------
-        row : dict
-            Trial-level summary row.
-
-        Returns
-        -------
-        None
-            Stores the row and writes CSV when configured.
-        """
+        """Append one trial summary row to memory and optional CSV output."""
         out_row = dict(row)
         self.summary_records.append(out_row)
         if self._summary_writer is not None:
             self._summary_writer.append(out_row)
 
     def _mark_completed(self, planned_row: Dict[str, Any], summary_row: Optional[Dict[str, Any]]) -> None:
-        """Record an accepted trial's plan ID in meta state.
-
-        Parameters
-        ----------
-        planned_row : dict
-            Planned row that usually contains ``plan_id``.
-        summary_row : dict, optional
-            Summary row fallback when the planned row has no ``plan_id``.
-
-        Returns
-        -------
-        None
-            Updates and saves meta state when available.
-        """
+        """Record an accepted trial's plan ID in meta state."""
         plan_id = str(planned_row.get("plan_id", "") or "")
         if not plan_id and summary_row is not None:
             plan_id = str(summary_row.get("plan_id", "") or "")
@@ -550,20 +559,7 @@ class Timeline:
             save_meta_state(self.meta_file, self.meta_state)
 
     def _insert_retry(self, pending: List[Dict[str, Any]], trial_row: Dict[str, Any]) -> None:
-        """Insert a rejected trial randomly within the current block.
-
-        Parameters
-        ----------
-        pending : list[dict]
-            Mutable list of remaining planned rows.
-        trial_row : dict
-            Rejected planned row to retry.
-
-        Returns
-        -------
-        None
-            Mutates ``pending`` in place.
-        """
+        """Insert a rejected trial randomly within the current block."""
         block_id = trial_row.get("block_id")
         same_block_count = 0
         for pending_row in pending:
@@ -593,21 +589,15 @@ def setup_timeline(**kwargs: Any) -> Timeline:
     return Timeline(**kwargs)
 
 
+def _is_unit_sequence(unit: Any) -> bool:
+    """Return whether ``unit`` is a sequence of runnable timeline units."""
+    if isinstance(unit, (Screen, _Trial, str, bytes, dict)):
+        return False
+    return isinstance(unit, Sequence)
+
+
 def _latest_rows_by_fields(rows: Sequence[Dict[str, Any]], fields: Sequence[str]) -> List[Dict[str, Any]]:
-    """Return trailing rows that share the latest row's ID fields.
-
-    Parameters
-    ----------
-    rows : sequence[dict]
-        Completed rows in saved order.
-    fields : sequence[str]
-        Candidate ID fields for the requested unit.
-
-    Returns
-    -------
-    list[dict]
-        Copied rows from the latest contiguous unit.
-    """
+    """Return trailing rows that share the latest row's ID fields."""
     latest = rows[-1]
     active_fields = [field for field in fields if field in latest]
     if not active_fields:
@@ -625,18 +615,7 @@ def _latest_rows_by_fields(rows: Sequence[Dict[str, Any]], fields: Sequence[str]
 
 
 def _attach_default_quit_screen(actions: Sequence[GlobalKeyAction]) -> None:
-    """Attach the default Y/N quit confirmation screen to the quit action.
-
-    Parameters
-    ----------
-    actions : sequence[GlobalKeyAction]
-        Configured global actions created by ``make_default_global_actions``.
-
-    Returns
-    -------
-    None
-        Mutates the default ``quit_requested`` action in place.
-    """
+    """Attach the default Y/N quit confirmation screen to the quit action."""
     for action in actions:
         if action.name == "quit_requested":
             action.screen = _make_quit_confirmation_screen()
@@ -644,52 +623,15 @@ def _attach_default_quit_screen(actions: Sequence[GlobalKeyAction]) -> None:
 
 
 def _make_quit_confirmation_screen() -> Screen:
-    """Create the default researcher quit-confirmation screen.
-
-    Parameters
-    ----------
-    None
-
-    Returns
-    -------
-    Screen
-        Key-response screen that quits only after ``Y`` and clears the quit
-        request after ``N``.
-    """
+    """Create the default researcher quit-confirmation screen."""
     text_stim = _LazyTextStim("Are you sure you want to exit?")
 
     def prepare_text(ctx: RunContext, data: Dict[str, Any]) -> None:
-        """Create the PsychoPy text stimulus once the window is available.
-
-        Parameters
-        ----------
-        ctx : RunContext
-            Current confirmation-screen context.
-        data : dict
-            Mutable raw row for the confirmation screen.
-
-        Returns
-        -------
-        None
-            Updates the lazy text drawable.
-        """
+        """Create the PsychoPy text stimulus once the window is available."""
         text_stim.setup(ctx.win)
 
     def finish_quit(ctx: RunContext, data: Dict[str, Any]) -> None:
-        """Apply the researcher Y/N quit confirmation response.
-
-        Parameters
-        ----------
-        ctx : RunContext
-            Current confirmation-screen context.
-        data : dict
-            Raw row containing the researcher response.
-
-        Returns
-        -------
-        None
-            Quits after ``Y`` or clears the quit request after ``N``.
-        """
+        """Apply the researcher Y/N quit confirmation response."""
         response = str(data.get("response") or "").lower()
         if response == "y":
             ctx.state["quit_confirmed"] = True
@@ -698,86 +640,37 @@ def _make_quit_confirmation_screen() -> Screen:
         ctx.state["quit_requested"] = False
         ctx.state["quit_confirmed"] = False
 
-    return make_screen(
+    return _make_screen(
         stimuli=[text_stim],
         response="key",
         keys=["y", "n"],
-        screen_name="quit_confirmation",
+        data={"screen_name": "quit_confirmation"},
         on_start=prepare_text,
         on_finish=finish_quit,
     )
 
 
 class _LazyTextStim:
-    """Small drawable that creates a PsychoPy TextStim at screen start.
-
-    Parameters
-    ----------
-    text : str
-        Researcher-facing text displayed on the confirmation screen.
-    """
+    """Small drawable that creates a PsychoPy TextStim at screen start."""
 
     def __init__(self, text: str) -> None:
-        """Store text until a PsychoPy window exists.
-
-        Parameters
-        ----------
-        text : str
-            Text to draw after ``setup`` creates the real PsychoPy stimulus.
-
-        Returns
-        -------
-        None
-            Initializes an empty drawable placeholder.
-        """
+        """Store text until a PsychoPy window exists."""
         self.text = str(text)
         self.drawable: Optional[Any] = None
 
     def setup(self, win: Any) -> None:
-        """Create the underlying PsychoPy text stimulus.
-
-        Parameters
-        ----------
-        win : psychopy.visual.Window
-            Window used for the confirmation screen.
-
-        Returns
-        -------
-        None
-            Stores the real ``TextStim`` for later ``draw`` calls.
-        """
+        """Create the underlying PsychoPy text stimulus."""
         visual = _load_psychopy_visual()
         self.drawable = visual.TextStim(win, text=self.text)
 
     def draw(self) -> None:
-        """Draw the underlying text stimulus when it has been created.
-
-        Parameters
-        ----------
-        None
-
-        Returns
-        -------
-        None
-            Draws nothing before ``setup`` runs.
-        """
+        """Draw the underlying text stimulus when it has been created."""
         if self.drawable is not None:
             self.drawable.draw()
 
 
 def _close_window_and_quit(win: Any) -> None:
-    """Close the PsychoPy window and quit after confirmed researcher exit.
-
-    Parameters
-    ----------
-    win : psychopy.visual.Window
-        Window to close after an explicit researcher ``Y`` response.
-
-    Returns
-    -------
-    None
-        Calls PsychoPy ``core.quit()``, which normally raises ``SystemExit``.
-    """
+    """Close the PsychoPy window and quit after confirmed researcher exit."""
     if hasattr(win, "saveFrameIntervals") and callable(win.saveFrameIntervals):
         win.saveFrameIntervals()
     if hasattr(win, "close") and callable(win.close):

@@ -206,7 +206,7 @@ def wrap_stimulus(
     -------
     object
         Timed drawable wrapper that can be passed to
-        ``beh.screens.make_screen(...)``.
+        ``timeline.make_screen(...)``.
 
     Examples
     --------
@@ -664,7 +664,7 @@ def make_fixation(
     -------
     object
         Timed drawable fixation wrapper that can be passed to
-        ``beh.screens.make_screen(...)``.
+        ``timeline.make_screen(...)``.
 
     Examples
     --------
