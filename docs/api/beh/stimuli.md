@@ -48,7 +48,79 @@ accepted. Response timing belongs to the screen.
 
 ## Built-in Stimuli
 
-### fixation
+All built-in helpers return a `Stimulus` wrapper. They support `start`, `end`,
+and `label`; the simple PsychoPy helpers also accept `**stim_kwargs` for
+additional PsychoPy stimulus options such as `height`, `wrapWidth`, `opacity`,
+`ori`, `contrast`, `interpolate`, `lineWidth`, or `depth`. The documented
+`stim.params` fields cover only common editable fields; advanced edits can use
+`stim.drawable` directly.
+
+### make_text(...)
+
+`make_text()` creates a timed wrapper around PsychoPy `TextStim`.
+
+| Parameter | Meaning | Default |
+| --- | --- | --- |
+| `win` | PsychoPy window used to build the text stimulus. | Required |
+| `text` | Text displayed by the stimulus. | Required |
+
+Editable params: `text`, `pos`, `color`, `height`, and `units`.
+
+### make_image(...)
+
+`make_image()` creates a timed wrapper around PsychoPy `ImageStim`.
+
+| Parameter | Meaning | Default |
+| --- | --- | --- |
+| `win` | PsychoPy window used to build the image stimulus. | Required |
+| `image` | Image source forwarded to PsychoPy. | Required |
+
+Editable params: `image`, `pos`, `size`, and `units`.
+
+### make_rect(...)
+
+`make_rect()` creates a timed wrapper around PsychoPy `Rect`.
+
+| Parameter | Meaning | Default |
+| --- | --- | --- |
+| `win` | PsychoPy window used to build the rect stimulus. | Required |
+| `width` | Rect width. | `0.5` |
+| `height` | Rect height. | `0.5` |
+| `pos` | Rect center position. | `(0.0, 0.0)` |
+| `color` | Fill and line color. HEX values and PsychoPy-supported names are allowed. | `"#000000"` |
+| `units` | PsychoPy units for rect geometry. | `"deg"` |
+
+Editable params: `width`, `height`, `pos`, `color`, and `units`.
+
+### make_circle(...)
+
+`make_circle()` creates a timed wrapper around PsychoPy `Circle`.
+
+| Parameter | Meaning | Default |
+| --- | --- | --- |
+| `win` | PsychoPy window used to build the circle stimulus. | Required |
+| `radius` | Circle radius. | `0.25` |
+| `pos` | Circle center position. | `(0.0, 0.0)` |
+| `color` | Fill and line color. HEX values and PsychoPy-supported names are allowed. | `"#000000"` |
+| `units` | PsychoPy units for circle geometry. | `"deg"` |
+
+Editable params: `radius`, `pos`, `color`, and `units`.
+
+### make_line(...)
+
+`make_line()` creates a timed wrapper around PsychoPy `Line`.
+
+| Parameter | Meaning | Default |
+| --- | --- | --- |
+| `win` | PsychoPy window used to build the line stimulus. | Required |
+| `start_pos` | Line start position. | Required |
+| `end_pos` | Line end position. | Required |
+| `color` | Line color. HEX values and PsychoPy-supported names are allowed. | `"#000000"` |
+| `units` | PsychoPy units for line geometry. | `"deg"` |
+
+Editable params: `start_pos`, `end_pos`, `color`, and `units`.
+
+### make_fixation(...)
 
 `make_fixation()` creates the current built-in fixation stimulus. It returns a
 timed wrapper that can be passed directly to `timeline.make_screen(...)`.
@@ -60,17 +132,10 @@ timed wrapper that can be passed directly to `timeline.make_screen(...)`.
 | `pos` | Fixation center position. | `(0.0, 0.0)` |
 | `color` | Visible fixation color. HEX values and PsychoPy-supported names are allowed. | `"#000000"` |
 | `units` | PsychoPy units for fixation geometry. | `"deg"` |
-| `start` | Seconds after screen onset when the fixation starts drawing. | Screen start |
-| `end` | Seconds after screen onset when the fixation stops drawing. | Screen end |
-| `label` | Researcher-facing label. | `"fixation"` |
 
 The fixation helper preserves the migrated `trackNeuAct` fixation proportions.
 Its transparent cross gap is not drawn as a background-colored mask, so it
 remains transparent on non-matching backgrounds.
-
-::: trackflow.beh.stimuli.make_fixation
-    options:
-      heading_level: 4
 
 ## Custom Stimuli
 
