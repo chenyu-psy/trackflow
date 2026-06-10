@@ -1,28 +1,30 @@
 # trackflow
 
-`trackflow` provides small, explicit PsychoPy runtime helpers for psychology
-experiments that use behavior, eye tracking, EEG markers, and deployment-time
-vendoring.
+## What is trackflow?
 
-The package is designed for lab code that should remain readable to researchers.
-It helps with repeated runtime bookkeeping while keeping the experiment
-procedure in ordinary PsychoPy scripts.
+`trackflow` is a small set of PsychoPy-first helpers for psychology
+experiments. It helps with the repeated parts of experiment scripts while
+keeping the scientific procedure visible in ordinary Python code.
 
-## Current status
+Use it to:
 
-The current package version is `0.1.1`. It includes:
+- build reusable PsychoPy screens;
+- save behavior rows and trial summaries;
+- detect gaze breaks during selected screens;
+- send EEG markers and EyeLink messages from explicit hooks.
 
-- `trackflow.beh` for timeline-owned behavior helpers organized into
-  timelines, stimuli, screens, trials, trial planning, interruption status, and
-  data output
-- `trackflow.gaze` for EyeLink setup, wrappers, and gaze-break monitoring
-- `trackflow.eeg` for parallel-port marker sending and debug marker senders
-- `trackflow.sync` for explicit EEG and EyeLink sync records
+Full documentation is available at <https://chenyu-psy.github.io/trackflow/>.
 
-Project packaging, vendoring commands, and experiment scaffolding are planned
-for later milestones.
+## When should I use it?
 
-## Installation
+Use `trackflow` when you want a readable PsychoPy script but do not want to
+rewrite the same runtime bookkeeping for every experiment.
+
+`trackflow` does not replace PsychoPy, choose your trial design, assign
+conditions, decide retry or exclusion rules, or hide marker timing. Your
+experiment script still owns those decisions.
+
+## Install
 
 Install from GitHub with `pip`:
 
@@ -36,10 +38,11 @@ If your project uses `uv`, add it with:
 uv add "trackflow @ git+https://github.com/chenyu-psy/trackflow.git"
 ```
 
-## Basic use
+## First screen
 
-`trackflow` does not open windows or initialize hardware when imported.
-Experiment scripts still create and own the PsychoPy window and task flow.
+This example creates one fixation screen and saves one raw behavior row when
+the screen completes. The `raw_data_file` receives one JSONL row for the
+completed screen.
 
 ```python
 from psychopy import visual
@@ -48,7 +51,11 @@ from trackflow import beh
 
 
 win = visual.Window(size=(1024, 768), units="deg")
-timeline = beh.timeline.setup_timeline(win=win, raw_data_file="data/S01_screen_data.jsonl")
+timeline = beh.timeline.setup_timeline(
+    win=win,
+    raw_data_file="data/S01_screen_data.jsonl",
+)
+
 fix = beh.stimuli.make_fixation(win, size=0.5, color="#000000")
 screen = timeline.make_screen(
     stimuli=[fix],
@@ -59,27 +66,50 @@ screen = timeline.make_screen(
 timeline.run(screen)
 ```
 
-`timeline.run(...)` runs exactly one screen or one trial-like object. Use a
-plain Python loop for planned trial-data rows, and use
-`return_status=True` only when experiment code needs to decide what to do after
-an accepted, rejected, or interrupted trial.
+For planned trials, keep the plan in normal Python code and call
+`timeline.run(...)` inside your loop.
 
-For complex trials, write a normal PsychoPy object with `run(ctx)` and return
-a `beh.timeline.TrialOutcome` so `trackflow` can handle common output and
-recovery bookkeeping.
+## Eye tracking and EEG
 
-## Development checks
+Eye tracking and EEG sends are explicit. The experiment script chooses marker
+codes, message text, send timing, and saved data fields.
 
-```bash
-uv sync --only-group dev --no-install-project
-PYTHONPATH=src uv run --no-sync pytest
-PYTHONPATH=src uv run --no-sync ruff check src tests
-PYTHONPATH=src uv run --no-sync mkdocs build --strict
+```python
+from trackflow import beh, eeg, gaze
+
+
+tracker = gaze.setup_tracker(
+    win=win,
+    cfg=gaze.GazeConfig(max_dist_deg=1.25),
+    edf_name="S01.edf",
+    monitor=monitor,
+    debug=True,
+)
+sender = eeg.setup_port(
+    debug=True,
+    code={"sample": 21},
+)
+timeline = beh.timeline.setup_timeline(
+    win=win,
+    gaze=tracker,
+    eeg=sender,
+)
+
+gaze_monitor = tracker.make_monitor(fixation=fix)
+gaze_monitor.start()
+
+def mark_sample(ctx, data):
+    code = ctx.code["sample"]
+    ctx.send(code, message="sample")
+    data["EEG"] = code
+    data["ET_message"] = "sample"
+
+sample_screen = timeline.make_screen(
+    stimuli=[sample],
+    duration=0.5,
+    on_load=mark_sample,
+    data={"screen_name": "sample"},
+)
+
+timeline.run(sample_screen)
 ```
-
-## Documentation
-
-The documentation site is published with GitHub Pages after changes are merged
-into `main`:
-
-<https://chenyu-psy.github.io/trackflow/>

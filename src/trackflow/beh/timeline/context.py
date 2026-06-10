@@ -45,8 +45,6 @@ class RunContext:
         Mutable runtime state.
     screen : object, optional
         Current screen while hooks are running.
-    sync : object, optional
-        Sync helper for EEG and EyeLink sends during hooks.
 
     Returns
     -------
@@ -60,7 +58,46 @@ class RunContext:
     params: Dict[str, Any]
     state: Dict[str, Any]
     screen: Any = None
-    sync: Any = None
+
+    @property
+    def code(self) -> Dict[str, int]:
+        """Return the configured EEG code dictionary.
+
+        Returns
+        -------
+        dict
+            Named EEG marker codes copied from the timeline's EEG sender.
+        """
+        return dict(getattr(getattr(self.timeline, "eeg", None), "code", {}) or {})
+
+    def send(self, code: Optional[int] = None, message: Optional[str] = None) -> None:
+        """Send one timeline event to configured EEG and EyeLink devices.
+
+        Parameters
+        ----------
+        code : int, optional
+            EEG marker code to send.
+        message : str, optional
+            EyeLink message text to send.
+
+        Returns
+        -------
+        None
+            Sends hardware side effects only. Experiment code should write any
+            saved fields explicitly.
+        """
+        self.timeline.send(code=code, message=message)
+        return None
+
+    def send_eeg(self, code: int) -> None:
+        """Send one EEG marker through the timeline."""
+        self.timeline.send_eeg(code)
+        return None
+
+    def send_gaze(self, message: str) -> None:
+        """Send one EyeLink message through the timeline."""
+        self.timeline.send_gaze(message)
+        return None
 
     def break_trial(
         self,

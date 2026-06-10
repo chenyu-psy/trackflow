@@ -1,3 +1,0 @@
-# Sync API
-
-::: trackflow.sync

@@ -48,11 +48,6 @@ class GazeConfig:
     bg_color : str, optional
         HEX background color used for normal gaze/calibration pages and
         EyeLink calibration background.
-    drift_after : int, optional
-        Consecutive rejection count that triggers one drift correction.
-    pause_after : int, optional
-        Consecutive rejection count above which the researcher recovery page
-        is shown.
     eyelink_settings : dict, optional
         Advanced EyeLink command overrides for settings not exposed as public
         top-level fields.
@@ -69,8 +64,6 @@ class GazeConfig:
     calibration_area: Tuple[float, float] = (0.5, 0.5)
     max_dist_deg: float = 1.25
     bg_color: str = "#7F7F7F"
-    drift_after: int = 3
-    pause_after: int = 5
     eyelink_settings: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -86,22 +79,6 @@ class GazeConfig:
                 raise ValueError("calibration_area values must be greater than 0 and at most 1.")
         self.max_dist_deg = float(self.max_dist_deg)
         self.bg_color = _normalize_hex(self.bg_color)
-        self.drift_after = int(self.drift_after)
-        self.pause_after = int(self.pause_after)
-
-    @property
-    def text_color(self) -> str:
-        """Return a readable text color for ``bg_color``.
-
-        Returns
-        -------
-        str
-            ``"#000000"`` for light backgrounds and ``"#FFFFFF"`` for dark
-            backgrounds.
-        """
-        if _should_use_dark_text(self.bg_color):
-            return "#000000"
-        return "#FFFFFF"
 
 
 def _make_tracking_settings(
@@ -137,11 +114,18 @@ def _make_tracking_settings(
     settings = dict(DEFAULT_TRACKING_SETTINGS)
     settings.update(cfg.eyelink_settings)
     settings["background_color"] = cfg.bg_color
-    settings["foreground_color"] = cfg.text_color
+    settings["foreground_color"] = _readable_text_color(cfg.bg_color)
     settings["calibration_type"] = calibration_type or cfg.calibration_type
     settings["calibration_area_proportion"] = area
     settings["validation_area_proportion"] = area
     return settings
+
+
+def _readable_text_color(bg_color: str) -> str:
+    """Return a readable text color for a normalized background color."""
+    if _should_use_dark_text(bg_color):
+        return "#000000"
+    return "#FFFFFF"
 
 
 def _validate_edf_name(edf_name: str) -> None:
@@ -161,4 +145,3 @@ def _validate_edf_name(edf_name: str) -> None:
         raise ValueError("EDF filename must be at most 12 characters long including the extension.")
     if not edf_name.endswith(".edf"):
         raise ValueError("edf_name must include the .edf extension.")
-

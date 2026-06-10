@@ -3,13 +3,14 @@
 Timelines are the behavior runtime API. A timeline owns the PsychoPy window,
 creates runtime-owned screens and ordered screen groups, runs them, stores
 completed rows, writes optional raw JSONL and summary CSV files, manages
-recovery metadata, exposes sync helpers, and handles researcher safety keys.
+completion state, exposes context send helpers, and handles researcher safety
+keys.
 
 ## Overview
 
 Use a timeline when `trackflow` should create runtime-owned screens, group
 screens into trial-like procedures, record completed screen rows, and manage
-recovery and researcher safety keys. The timeline does not define the
+completion state and researcher safety keys. The timeline does not define the
 scientific procedure; ordinary Python control flow decides when to create and
 run each unit.
 
@@ -25,7 +26,7 @@ trial = timeline.make_trial(screens=[screen])
 timeline.run(trial, trial_data={"condition": "practice"})
 ```
 
-Global researcher keys and recovery metadata are timeline runtime
+Global researcher keys and completion state are timeline runtime
 bookkeeping. They are configured through timeline setup and are not separate
 Behavior API pages.
 
@@ -143,7 +144,7 @@ image_instruction = timeline.make_image_screen(
 ```
 
 When a timeline runs a screen, the row is built from current `trial_data`, the
-screen's own `data`, response fields, and sync containers. Readable labels
+screen's own `data`, response fields, and send-record containers. Readable labels
 such as `screen_name` are ordinary data fields.
 
 ## Creating Trials
@@ -248,7 +249,7 @@ collection. Use `on_frame(ctx, data, elapsed)` when a screen needs real-time
 checks during presentation. The frame hook can call `ctx.break_trial(...)` to
 stop the current screen and trial immediately. Interrupted trials are saved with
 `trial_status="interrupted"` and an `interruption` reason, are not marked
-complete in recovery metadata, and return `False` when
+complete in completion state, and return `False` when
 `return_status=True`.
 
 Function:
@@ -265,9 +266,11 @@ Arguments:
   outcome details.
 
 ```python
+gaze_monitor = tracker.make_monitor(fixation=fixation)
+
 def check_gaze(ctx, data, elapsed):
     try:
-        ctx.timeline.gaze.check()
+        gaze_monitor.check()
     except gaze.GazeBreakError as err:
         ctx.break_trial(
             reason="eye_movement",
@@ -350,7 +353,7 @@ class CustomTrial:
 ## Runtime Context
 
 `RunContext` is passed to trial-like objects and screen hooks so code can access
-the window, timeline state, trial data, active screen, and sync helper.
+the window, timeline state, trial data, active screen, and send helpers.
 
 - `ctx.win`: PsychoPy window configured on the timeline.
 - `ctx.timeline`: timeline running the current unit.
@@ -358,7 +361,9 @@ the window, timeline state, trial data, active screen, and sync helper.
 - `ctx.params`: stable runtime settings.
 - `ctx.state`: mutable runtime flags.
 - `ctx.screen`: current screen while screen hooks are running.
-- `ctx.sync`: configured EEG/EyeLink sync helper.
+- `ctx.code`: configured EEG marker-code dictionary.
+- `ctx.send(...)`: send an EEG marker and/or EyeLink message.
+- `ctx.send_eeg(...)` and `ctx.send_gaze(...)`: device-specific send helpers.
 
 ::: trackflow.beh.timeline.RunContext
     options:
