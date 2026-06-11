@@ -14,7 +14,7 @@ from .config import (
     _validate_edf_name,
 )
 from .display import _make_eyelink_display
-from .monitor import GazeMonitor
+from .monitor import GazeBreakError, GazeMonitor
 from .runtime import (
     DEFAULT_CALIBRATION_INTRO,
     DEFAULT_CALIBRATION_TRANSITION,
@@ -87,6 +87,7 @@ class ConnectedEyeLinker:
         self.debug = False
         self.graphics_initialized = False
         self.text_color = _readable_text_color(cfg.bg_color)
+        self._gaze_monitor = None
 
     def initialize_graphics(self) -> None:
         """Open EyeLink calibration graphics through PsychoPy.
@@ -309,6 +310,31 @@ class ConnectedEyeLinker:
             time_func=time_func,
             sleep_func=sleep_func,
         )
+
+    def _get_gaze_monitor(self) -> GazeMonitor:
+        """Return the internally managed realtime gaze monitor."""
+        if self._gaze_monitor is None:
+            self._gaze_monitor = self.make_monitor()
+        return self._gaze_monitor
+
+    def start_tracking(self) -> None:
+        """Start realtime fixation tracking through the internal monitor."""
+        self._get_gaze_monitor().start_tracking()
+        return None
+
+    def stop_tracking(self) -> None:
+        """Stop realtime fixation tracking through the internal monitor."""
+        self._get_gaze_monitor().stop_tracking()
+        return None
+
+    def check_fixation(self) -> bool:
+        """Check realtime fixation through the internal monitor."""
+        return bool(self._get_gaze_monitor().check_fixation())
+
+    def show_feedback(self, error: Optional[GazeBreakError] = None, continue_keys: Sequence[str] = ("space",)) -> None:
+        """Show gaze-break feedback through the internal monitor."""
+        self._get_gaze_monitor().show_feedback(error=error, continue_keys=continue_keys)
+        return None
 
     def close_edf(self) -> None:
         """Close the EDF file on the EyeLink host.
@@ -561,6 +587,7 @@ class DebugEyeLinker:
         self.graphics_initialized = True
         self.text_color = _readable_text_color(cfg.bg_color)
         self.gaze_data_both = (None, None)
+        self._gaze_monitor = None
 
     def initialize_graphics(self) -> None:
         """No-op graphics initialization for debug mode."""
@@ -673,6 +700,31 @@ class DebugEyeLinker:
             time_func=time_func,
             sleep_func=sleep_func,
         )
+
+    def _get_gaze_monitor(self) -> GazeMonitor:
+        """Return the internally managed debug gaze monitor."""
+        if self._gaze_monitor is None:
+            self._gaze_monitor = self.make_monitor()
+        return self._gaze_monitor
+
+    def start_tracking(self) -> None:
+        """Start realtime fixation tracking through the internal monitor."""
+        self._get_gaze_monitor().start_tracking()
+        return None
+
+    def stop_tracking(self) -> None:
+        """Stop realtime fixation tracking through the internal monitor."""
+        self._get_gaze_monitor().stop_tracking()
+        return None
+
+    def check_fixation(self) -> bool:
+        """Check realtime fixation through the internal monitor."""
+        return bool(self._get_gaze_monitor().check_fixation())
+
+    def show_feedback(self, error: Optional[GazeBreakError] = None, continue_keys: Sequence[str] = ("space",)) -> None:
+        """Show gaze-break feedback through the internal monitor."""
+        self._get_gaze_monitor().show_feedback(error=error, continue_keys=continue_keys)
+        return None
 
     def close(self, save_as: Optional[str] = None) -> None:
         """No-op close for debug mode."""

@@ -13,7 +13,8 @@ deployment workflows.
 `trackflow` helps psychology researchers keep experiment scripts explicit while
 reusing the runtime pieces that often become repetitive across studies:
 behavior rows, trial summaries, interruption status, EyeLink setup,
-gaze-break monitoring, EEG marker sending, and timeline-owned send helpers.
+tracker-owned gaze-break monitoring, EEG marker sending, and timeline-owned
+send helpers.
 
 The package is intentionally not a full experiment runner. Use ordinary
 PsychoPy code for the scientific procedure, timing, stimuli, and responses. Use
@@ -25,7 +26,8 @@ The current public API is organized into three runtime areas:
 - `trackflow.beh` for timeline-owned behavior helpers organized into
   timelines, stimuli, screens, trials, trial planning, interruption status, and
   data output
-- `trackflow.gaze` for EyeLink setup and gaze-break monitoring
+- `trackflow.gaze` for EyeLink tracker setup, recording, and gaze-break
+  monitoring
 - `trackflow.eeg` for EEG setup and marker sending
 
 ## Installation
@@ -87,8 +89,9 @@ with `run(ctx)` and return `beh.timeline.TrialOutcome` so
 `beh.timeline.Timeline` can still handle output and recovery bookkeeping.
 
 Use `on_frame(ctx, data, elapsed)` for real-time monitoring such as gaze breaks
-or early presses. The hook can call `ctx.break_trial(...)` so experiment code
-can record the interrupted attempt and decide its own retry policy.
+or early presses. Eye tracking is available as `ctx.tracker` when a tracker was
+passed to the timeline. The hook can call `ctx.break_trial(...)` so experiment
+code can record the interrupted attempt and decide its own retry policy.
 
 ### Sends stay visible
 

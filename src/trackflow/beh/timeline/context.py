@@ -28,6 +28,63 @@ class TrialInterrupted(Exception):
 
 
 @dataclass
+class TrackerRuntime:
+    """Safe facade for eye-tracker recording and realtime fixation tracking."""
+
+    tracker: Any = None
+    _monitor: Any = None
+
+    def start_recording(self) -> None:
+        """Start tracker recording when a tracker is configured."""
+        if self.tracker is not None and hasattr(self.tracker, "start_recording"):
+            self.tracker.start_recording()
+        return None
+
+    def stop_recording(self) -> None:
+        """Stop tracker recording when a tracker is configured."""
+        if self.tracker is not None and hasattr(self.tracker, "stop_recording"):
+            self.tracker.stop_recording()
+        return None
+
+    def start_tracking(self) -> None:
+        """Start realtime fixation tracking when a tracker is configured."""
+        if self.tracker is not None and hasattr(self.tracker, "start_tracking"):
+            self.tracker.start_tracking()
+            return None
+        monitor = self._get_monitor()
+        if monitor is not None and hasattr(monitor, "start_tracking"):
+            monitor.start_tracking()
+        return None
+
+    def stop_tracking(self) -> None:
+        """Stop realtime fixation tracking when a tracker is configured."""
+        if self.tracker is not None and hasattr(self.tracker, "stop_tracking"):
+            self.tracker.stop_tracking()
+            return None
+        monitor = self._get_monitor()
+        if monitor is not None and hasattr(monitor, "stop_tracking"):
+            monitor.stop_tracking()
+        return None
+
+    def check_fixation(self) -> bool:
+        """Check realtime fixation when a tracker is configured."""
+        if self.tracker is not None and hasattr(self.tracker, "check_fixation"):
+            return bool(self.tracker.check_fixation())
+        monitor = self._get_monitor()
+        if monitor is None or not hasattr(monitor, "check_fixation"):
+            return False
+        return bool(monitor.check_fixation())
+
+    def _get_monitor(self) -> Any:
+        """Return a tracker-created monitor when the tracker supports one."""
+        if self._monitor is not None:
+            return self._monitor
+        if self.tracker is not None and hasattr(self.tracker, "make_monitor"):
+            self._monitor = self.tracker.make_monitor()
+        return self._monitor
+
+
+@dataclass
 class RunContext:
     """Runtime context passed to trial-like objects and screen hooks.
 
@@ -43,6 +100,8 @@ class RunContext:
         Stable runtime parameters.
     state : dict
         Mutable runtime state.
+    tracker : TrackerRuntime
+        Facade for eye-tracker recording and realtime fixation tracking.
     screen : object, optional
         Current screen while hooks are running.
 
@@ -57,6 +116,7 @@ class RunContext:
     trial_data: Dict[str, Any]
     params: Dict[str, Any]
     state: Dict[str, Any]
+    tracker: TrackerRuntime = field(default_factory=TrackerRuntime)
     screen: Any = None
 
     @property

@@ -157,8 +157,8 @@ class GazeMonitor:
         core = _load_psychopy_module("core")
         core.wait(float(duration))
 
-    def start(self) -> None:
-        """Start realtime gaze monitoring.
+    def start_tracking(self) -> None:
+        """Start realtime fixation tracking.
 
         Returns
         -------
@@ -168,8 +168,8 @@ class GazeMonitor:
         """
         self.active = self.enabled and self.tracker is not None
 
-    def stop(self) -> None:
-        """Stop realtime gaze monitoring.
+    def stop_tracking(self) -> None:
+        """Stop realtime fixation tracking.
 
         Returns
         -------
@@ -178,7 +178,7 @@ class GazeMonitor:
         """
         self.active = False
 
-    def check(self) -> bool:
+    def check_fixation(self) -> bool:
         """Check the newest gaze sample against the fixation radius.
 
         Returns
@@ -247,7 +247,7 @@ class GazeMonitor:
             return False
         start_time = self._time()
         while self._time() < start_time + float(duration):
-            self.check()
+            self.check_fixation()
             self._sleep(sample_interval)
         return False
 

@@ -2,6 +2,7 @@
 
 import csv
 import json
+import random
 import tempfile
 import unittest
 from unittest import mock
@@ -43,10 +44,60 @@ class FakeWindow:
     def __init__(self):
         """Initialize flip count."""
         self.flip_calls = 0
+        self.size = (1920, 1080)
+        self.frameBufferSize = (1920, 1080)
 
     def flip(self):
         """Record one screen flip."""
         self.flip_calls += 1
+
+
+class FakeGazeTracker:
+    """Tracker stand-in that records recording calls and creates a monitor."""
+
+    def __init__(self, monitor=None):
+        """Initialize recording call counters and optional monitor."""
+        self.start_recording_calls = 0
+        self.stop_recording_calls = 0
+        self.monitor = monitor
+        self.make_monitor_calls = 0
+
+    def start_recording(self):
+        """Record one start-recording request."""
+        self.start_recording_calls += 1
+
+    def stop_recording(self):
+        """Record one stop-recording request."""
+        self.stop_recording_calls += 1
+
+    def make_monitor(self):
+        """Return the configured monitor for realtime fixation checks."""
+        self.make_monitor_calls += 1
+        return self.monitor
+
+
+class FakeGazeMonitor:
+    """Fixation monitor stand-in that records tracking calls."""
+
+    def __init__(self, check_result=False):
+        """Initialize tracking call counters."""
+        self.check_result = check_result
+        self.start_tracking_calls = 0
+        self.stop_tracking_calls = 0
+        self.check_fixation_calls = 0
+
+    def start_tracking(self):
+        """Record one start-tracking request."""
+        self.start_tracking_calls += 1
+
+    def stop_tracking(self):
+        """Record one stop-tracking request."""
+        self.stop_tracking_calls += 1
+
+    def check_fixation(self):
+        """Record one fixation check and return the configured result."""
+        self.check_fixation_calls += 1
+        return self.check_result
 
 
 class FakeCore:
@@ -125,6 +176,8 @@ class FakeShape:
         self.args = args
         self.kwargs = kwargs
         self.draw_calls = 0
+        self.size = kwargs.get("size", (100, 100))
+        self._origSize = kwargs.get("_origSize", self.size)
 
     def draw(self):
         """Record one draw call."""
@@ -411,7 +464,7 @@ class BehaviorScreenTests(unittest.TestCase):
             data={"screen_name": "sample"},
             on_load=mark_sample,
         )
-        timeline = beh.timeline.setup_timeline(win=FakeWindow(), eeg=eeg_sender, gaze=gaze_sender)
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), eeg=eeg_sender, tracker=gaze_sender)
         core = FakeCore([0.0, 0.0, 0.3])
         event = FakeEvent(key_batches=[[]])
 
@@ -473,7 +526,7 @@ class BehaviorScreenTests(unittest.TestCase):
         gaze_sender = FakeGazeSender()
 
         screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, on_load=lambda ctx: ctx.send_gaze("sample"))
-        timeline = beh.timeline.setup_timeline(win=FakeWindow(), gaze=gaze_sender)
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), tracker=gaze_sender)
         core = FakeCore([0.0, 0.0, 0.2])
         event = FakeEvent(key_batches=[[]])
 
@@ -506,7 +559,7 @@ class BehaviorScreenTests(unittest.TestCase):
         """timeline.send should support trial-outside sends without rows."""
         eeg_sender = FakeEegSender()
         gaze_sender = FakeGazeSender()
-        timeline = beh.timeline.setup_timeline(win=FakeWindow(), eeg=eeg_sender, gaze=gaze_sender)
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), eeg=eeg_sender, tracker=gaze_sender)
 
         result = timeline.send(99, message="block_start")
 
@@ -660,8 +713,62 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertEqual(text_screen.stimuli[1].drawable.kwargs["pos"], (0, -0.7))
         self.assertEqual(text_screen.stimuli[1].drawable.kwargs["height"], 0.05)
         self.assertEqual(len(image_screen.stimuli), 2)
-        self.assertEqual(image_screen.stimuli[1].drawable.kwargs["units"], "norm")
-        self.assertEqual(image_screen.stimuli[1].drawable.kwargs["pos"], (0, -0.85))
+        self.assertEqual(image_screen.stimuli[1].drawable.kwargs["units"], "height")
+        self.assertEqual(image_screen.stimuli[1].drawable.kwargs["height"], 0.03)
+        self.assertEqual(image_screen.stimuli[1].drawable.kwargs["pos"], (0.0, -0.45))
+
+    def test_text_image_helpers_use_relative_default_text_kwargs(self):
+        """Text and prompt defaults should use screen-relative height units."""
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+
+        with mock.patch.object(beh_timeline_core, "_load_psychopy_visual") as visual_loader:
+            visual_loader.return_value.TextStim = FakeShape
+            visual_loader.return_value.ImageStim = FakeShape
+            text_screen = timeline.make_text_screen("Ready", duration=0.1)
+            image_screen = timeline.make_image_screen(
+                "instruction.png",
+                duration=0.1,
+                prompt_text="Press Space to continue",
+            )
+
+        text_kwargs = text_screen.stimuli[0].drawable.kwargs
+        self.assertEqual(text_kwargs["units"], "height")
+        self.assertEqual(text_kwargs["height"], 0.033)
+        self.assertEqual(text_kwargs["color"], "#000000")
+        prompt_kwargs = image_screen.stimuli[1].drawable.kwargs
+        self.assertEqual(prompt_kwargs["units"], "height")
+        self.assertEqual(prompt_kwargs["height"], 0.03)
+        self.assertEqual(prompt_kwargs["wrapWidth"], 1.6)
+
+    def test_image_helper_auto_scale_fits_window_aspect_ratio(self):
+        """scale='auto' should fit images to the window while preserving aspect ratio."""
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+
+        with mock.patch.object(beh_timeline_core, "_load_psychopy_visual") as visual_loader:
+            visual_loader.return_value.TextStim = FakeShape
+            visual_loader.return_value.ImageStim = FakeShape
+            image_screen = timeline.make_image_screen(
+                "instruction.png",
+                duration=0.1,
+                scale="auto",
+                image_kwargs={"size": (1600, 900)},
+            )
+
+        image_stim = image_screen.stimuli[0].drawable
+        self.assertEqual(image_stim.kwargs["units"], "norm")
+        self.assertEqual(image_stim.size, (2.0, 2.0))
+
+    def test_image_helper_rejects_invalid_scale(self):
+        """Image screens should reject unknown or non-positive scale values."""
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+
+        with mock.patch.object(beh_timeline_core, "_load_psychopy_visual") as visual_loader:
+            visual_loader.return_value.TextStim = FakeShape
+            visual_loader.return_value.ImageStim = FakeShape
+            with self.assertRaisesRegex(ValueError, "scale"):
+                timeline.make_image_screen("instruction.png", duration=0.1, scale=0)
+            with self.assertRaisesRegex(ValueError, "scale"):
+                timeline.make_image_screen("instruction.png", duration=0.1, scale="wide")
 
     def test_text_image_helpers_require_end_condition(self):
         """Instruction wrappers should preserve make_screen end-condition validation."""
@@ -728,6 +835,54 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertEqual(calls, [(timeline.win, timeline, "break")])
         self.assertEqual(timeline.records, [])
         self.assertEqual(timeline.summary_records, [])
+
+    def test_ctx_tracker_delegates_recording_and_fixation_tracking(self):
+        """ctx.tracker should expose recording and fixation tracking helpers."""
+        monitor = FakeGazeMonitor(check_result=True)
+        tracker = FakeGazeTracker(monitor=monitor)
+        timeline = beh.timeline.setup_timeline(
+            win=FakeWindow(),
+            tracker=tracker,
+        )
+
+        def on_start(ctx, data):
+            """Exercise the tracker facade from a screen hook."""
+            ctx.tracker.start_recording()
+            ctx.tracker.start_tracking()
+            data["fixation_ok"] = ctx.tracker.check_fixation()
+            ctx.tracker.stop_tracking()
+            ctx.tracker.stop_recording()
+
+        screen = timeline.make_screen(
+            stimuli=[FakeStim()],
+            duration=0.1,
+            data={"screen_name": "gaze"},
+            on_start=on_start,
+        )
+        core = FakeCore([0.0, 0.0, 0.2])
+        event = FakeEvent(key_batches=[[]])
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                timeline.run(screen)
+
+        self.assertEqual(tracker.start_recording_calls, 1)
+        self.assertEqual(tracker.stop_recording_calls, 1)
+        self.assertEqual(tracker.make_monitor_calls, 1)
+        self.assertEqual(monitor.start_tracking_calls, 1)
+        self.assertEqual(monitor.check_fixation_calls, 1)
+        self.assertEqual(monitor.stop_tracking_calls, 1)
+        self.assertTrue(timeline.records[0]["fixation_ok"])
+
+    def test_tracker_runtime_noops_without_tracker(self):
+        """TrackerRuntime should be safe in behavior-only timelines."""
+        runtime = beh.timeline.TrackerRuntime()
+
+        self.assertIsNone(runtime.start_recording())
+        self.assertIsNone(runtime.stop_recording())
+        self.assertIsNone(runtime.start_tracking())
+        self.assertFalse(runtime.check_fixation())
+        self.assertIsNone(runtime.stop_tracking())
 
     def test_on_frame_can_mutate_screen_row(self):
         """on_frame should run inside the screen loop with elapsed time."""
@@ -809,6 +964,63 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertEqual(state["completed_plan_ids"], [])
         self.assertEqual(feedback_stim.draw_calls, 1)
         self.assertEqual(later_stim.draw_calls, 0)
+
+    def test_interrupted_trial_formats_summary_from_partial_screen_rows(self):
+        """Interrupted trials should still pass partial rows through data_format."""
+        formatted = []
+
+        def interrupt_trial(ctx, data, elapsed):
+            """Interrupt the trial after recording screen-level fields."""
+            data["phase_value"] = "sample_seen"
+            ctx.break_trial(reason="early_press", data={"early_key": "z"})
+
+        def format_summary(rows):
+            """Build a summary row from the interrupted trial's partial data."""
+            formatted.append([dict(row) for row in rows])
+            row = rows[0]
+            return {
+                "plan_id": row["plan_id"],
+                "phase_value": row.get("phase_value", "NA"),
+                "early_key": row.get("early_key", "NA"),
+            }
+
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+        interrupting_screen = timeline.make_screen(
+            stimuli=[FakeStim()],
+            duration=1.0,
+            data={"screen_name": "probe_delay"},
+            on_frame=interrupt_trial,
+        )
+        later_screen = timeline.make_screen(
+            stimuli=[FakeStim()],
+            duration=0.1,
+            data={"screen_name": "probe_test"},
+        )
+        trial = timeline.make_trial(
+            screens=[interrupting_screen, later_screen],
+            data_format=format_summary,
+        )
+        core = FakeCore([0.0, 0.0])
+        event = FakeEvent(key_batches=[[]])
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                result = timeline.run(
+                    trial,
+                    trial_data={"plan_id": "exp_0001"},
+                    return_status=True,
+                )
+
+        self.assertFalse(result)
+        self.assertEqual(len(formatted), 1)
+        self.assertEqual(len(formatted[0]), 1)
+        self.assertEqual(timeline.summary_records[0]["plan_id"], "exp_0001")
+        self.assertEqual(timeline.summary_records[0]["phase_value"], "sample_seen")
+        self.assertEqual(timeline.summary_records[0]["early_key"], "z")
+        self.assertEqual(timeline.summary_records[0]["trial_status"], "interrupted")
+        self.assertEqual(timeline.summary_records[0]["interruption"], "early_press")
+        self.assertEqual(timeline.records[0]["screen_name"], "probe_delay")
+        self.assertEqual(timeline.records[0]["trial_status"], "interrupted")
 
     def test_timeline_run_rejects_unit_sequences(self):
         """Multiple units should be run with explicit calls."""
@@ -922,6 +1134,13 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("EEG sender must provide send(code).", result.issues)
 
+    def test_preflight_checks_enabled_tracker(self):
+        """Enabled eye tracker must provide an EyeLink message send method."""
+        result = beh_preflight.check_preflight(require_psychopy=False, tracker=object())
+
+        self.assertFalse(result.passed)
+        self.assertIn("Eye-tracker wrapper must provide send_msg(text) or send_message(text).", result.issues)
+
     def test_get_last_data_supports_trial_unit(self):
         """The last trial query should return all rows from the latest trial."""
         timeline = beh.timeline.setup_timeline(win=FakeWindow())
@@ -966,6 +1185,70 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertIn("session_id", rows[0])
         self.assertIn("block_id", rows[0])
         self.assertIn("trial_id", rows[0])
+
+    def test_requeue_trials_supports_random_delay_placement(self):
+        """Retry helpers should insert rows in a legal delayed position."""
+        trial_queue = [
+            {"plan_id": "exp_0002"},
+            {"plan_id": "exp_0003"},
+            {"plan_id": "exp_0004"},
+        ]
+        retry = {"plan_id": "exp_0001", "block_id": 1}
+        rng = random.Random(1)
+
+        beh.design.requeue_trials(
+            trial_queue,
+            retry,
+            placement="random",
+            min_delay=1,
+            rng=rng,
+        )
+
+        self.assertEqual(len(trial_queue), 4)
+        self.assertEqual(trial_queue[0]["plan_id"], "exp_0002")
+        retry_idx = [row["plan_id"] for row in trial_queue].index("exp_0001")
+        self.assertGreaterEqual(retry_idx, 1)
+        self.assertLessEqual(retry_idx, 3)
+
+    def test_requeue_trials_defaults_to_next_placement(self):
+        """Retry helpers should retry on the next queue position by default."""
+        trial_queue = [{"plan_id": "exp_0002"}]
+
+        beh.design.requeue_trials(
+            trial_queue,
+            {"plan_id": "exp_0001"},
+        )
+
+        self.assertEqual([row["plan_id"] for row in trial_queue], ["exp_0001", "exp_0002"])
+
+    def test_requeue_trials_supports_end_placement(self):
+        """Retry helpers should support explicit queue-end placement."""
+        trial_queue = [{"plan_id": "exp_0002"}]
+
+        beh.design.requeue_trials(
+            trial_queue,
+            {"plan_id": "exp_0001"},
+            placement="end",
+        )
+
+        self.assertEqual([row["plan_id"] for row in trial_queue], ["exp_0002", "exp_0001"])
+
+    def test_requeue_trials_rejects_unknown_placement(self):
+        """Retry helpers should reject ambiguous insertion strategies."""
+        with self.assertRaises(ValueError):
+            beh.design.requeue_trials(
+                [],
+                {"plan_id": "exp_0001"},
+                placement="middle",
+            )
+
+    def test_requeue_trials_rejects_immutable_trial_queue(self):
+        """Retry helpers should require the queue object that will be mutated."""
+        with self.assertRaises(TypeError):
+            beh.design.requeue_trials(
+                ({"plan_id": "exp_0001"},),
+                {"plan_id": "exp_0000"},
+            )
 
     def test_meta_state_tracks_remaining_rows_by_accepted_plan_id(self):
         """Recovery should filter only rows whose plan IDs were accepted."""

@@ -3,16 +3,16 @@
 Timelines are the behavior runtime API. A timeline owns the PsychoPy window,
 creates runtime-owned screens and ordered screen groups, runs them, stores
 completed rows, writes optional raw JSONL and summary CSV files, manages
-completion state, exposes context send helpers, and handles researcher safety
-keys.
+completion state, exposes context helpers for EEG and eye tracking, and handles
+researcher safety keys.
 
 ## Overview
 
 Use a timeline when `trackflow` should create runtime-owned screens, group
-screens into trial-like procedures, record completed screen rows, and manage
-completion state and researcher safety keys. The timeline does not define the
-scientific procedure; ordinary Python control flow decides when to create and
-run each unit.
+screens into trial-like procedures, record completed screen rows, and provide a
+single runtime context for hooks. The timeline does not define the scientific
+procedure; ordinary Python control flow decides when to create and run each
+unit.
 
 ```python
 from trackflow import beh
@@ -26,9 +26,10 @@ trial = timeline.make_trial(screens=[screen])
 timeline.run(trial, trial_data={"condition": "practice"})
 ```
 
-Global researcher keys and completion state are timeline runtime
-bookkeeping. They are configured through timeline setup and are not separate
-Behavior API pages.
+Global researcher keys, completion state, EEG sends, and eye-tracker access are
+timeline runtime bookkeeping. They are configured through timeline setup and
+used from hook context, but experiment code still chooses marker timing,
+monitored phases, and saved data fields.
 
 ## Creating A Timeline
 
@@ -45,6 +46,9 @@ Common arguments:
   rows.
 - `params` and `state`: stable settings and mutable runtime state available
   through `RunContext`.
+- `eeg`: optional EEG sender used by `ctx.send(...)` and `ctx.send_eeg(...)`.
+- `tracker`: optional EyeLink tracker runtime used by `ctx.send(...)`,
+  `ctx.send_gaze(...)`, and `ctx.tracker`.
 - `global_actions`: researcher safety keys such as pause or quit.
 
 ```python
@@ -52,8 +56,13 @@ timeline = beh.timeline.setup_timeline(
     win=win,
     raw_data_file="data/S01_screen_data.jsonl",
     summary_file="data/S01_trial_summary.csv",
+    tracker=tracker,
 )
 ```
+
+Passing `tracker=` does not make the timeline check gaze automatically. It only
+makes the tracker available to hooks as `ctx.tracker`, so each screen can decide
+whether fixation should be monitored.
 
 ## Creating Screens
 
@@ -79,7 +88,7 @@ Important arguments:
 - `choices`: response-option list for the selected response mode.
 - `data`: screen-level fields copied into each raw row.
 - `on_start`, `on_load`, `on_frame`, `on_finish`: lifecycle hooks for setup,
-  first-flip work, real-time checks, and final row edits.
+  first-flip work, real-time checks, device sends, and final row edits.
 
 For `response="key"`, pass PsychoPy key names such as
 `choices=["f", "j"]`. `choices=None` accepts no participant response choices,
@@ -265,12 +274,26 @@ Arguments:
 - `data`: optional fields merged into the interrupted screen row and trial
   outcome details.
 
+Eye tracking uses the same interruption mechanism. Create the tracker with
+`trackflow.gaze`, pass it to `setup_timeline(..., tracker=tracker)`, then call
+`ctx.tracker.check_fixation()` only from screens where fixation matters. A
+behavior-only timeline still has `ctx.tracker`; its methods are safe no-ops
+when no tracker was configured.
+
 ```python
-gaze_monitor = tracker.make_monitor(fixation=fixation)
+from trackflow import beh, gaze
+
+tracker = gaze.setup_tracker(
+    win=win,
+    cfg=gaze.GazeConfig(max_dist_deg=1.25),
+    edf_name="S01.edf",
+    monitor=monitor,
+)
+timeline = beh.timeline.setup_timeline(win=win, tracker=tracker)
 
 def check_gaze(ctx, data, elapsed):
     try:
-        gaze_monitor.check()
+        ctx.tracker.check_fixation()
     except gaze.GazeBreakError as err:
         ctx.break_trial(
             reason="eye_movement",
@@ -278,10 +301,12 @@ def check_gaze(ctx, data, elapsed):
             data={"eye_x": err.x, "eye_y": err.y},
         )
 
+tracker.start_tracking()
 sample_screen = timeline.make_screen(
     stimuli=[sample],
     duration=0.5,
     on_frame=check_gaze,
+    data={"screen_name": "sample"},
 )
 ```
 
@@ -353,13 +378,17 @@ class CustomTrial:
 ## Runtime Context
 
 `RunContext` is passed to trial-like objects and screen hooks so code can access
-the window, timeline state, trial data, active screen, and send helpers.
+the window, timeline state, trial data, active screen, tracker runtime, and send
+helpers.
 
 - `ctx.win`: PsychoPy window configured on the timeline.
 - `ctx.timeline`: timeline running the current unit.
 - `ctx.trial_data`: data inherited by every screen row in this trial run.
 - `ctx.params`: stable runtime settings.
 - `ctx.state`: mutable runtime flags.
+- `ctx.tracker`: eye-tracker facade for recording and realtime fixation
+  tracking. Without a configured tracker, its helper methods are no-ops and
+  `check_fixation()` returns `False`.
 - `ctx.screen`: current screen while screen hooks are running.
 - `ctx.code`: configured EEG marker-code dictionary.
 - `ctx.send(...)`: send an EEG marker and/or EyeLink message.

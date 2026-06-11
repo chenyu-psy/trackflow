@@ -38,10 +38,11 @@ class _Trial:
                     screen_rows.append(dict(err.row))
                 if err.screen is not None and hasattr(ctx.timeline, "_run_feedback_screen"):
                     ctx.timeline._run_feedback_screen(ctx, err.screen)
+                summary_row = self._format_summary(screen_rows)
                 return TrialOutcome(
                     status="interrupted",
                     reason=err.reason,
-                    row=None,
+                    row=summary_row,
                     screen_rows=screen_rows,
                     details=dict(err.data),
                 )
@@ -55,13 +56,15 @@ class _Trial:
                     )
                 )
 
-        summary_row = None
-        if self.data_format is not None:
-            summary_row = self.data_format([dict(screen_row) for screen_row in screen_rows])
-
         return TrialOutcome(
             status="accepted",
             reason="no",
-            row=summary_row,
+            row=self._format_summary(screen_rows),
             screen_rows=screen_rows,
         )
+
+    def _format_summary(self, screen_rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Return a trial summary row from completed or interrupted screen rows."""
+        if self.data_format is None:
+            return None
+        return self.data_format([dict(screen_row) for screen_row in screen_rows])

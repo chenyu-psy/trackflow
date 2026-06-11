@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 
 from .. import _psychopy
 from ..data import DataRows, SummaryWriter, append_jsonl
@@ -16,7 +16,7 @@ from ..keys import (
 )
 from ..recovery import mark_plan_completed, save_meta_state
 from ..stimuli import wrap_stimulus
-from .context import RunContext, TrialOutcome
+from .context import RunContext, TrackerRuntime, TrialOutcome
 from .screen import Screen, _make_screen
 from .sync import send_eeg, send_gaze
 from .trial import _Trial
@@ -41,8 +41,8 @@ class Timeline:
         Loaded or newly-created recovery state.
     params, state : dict, optional
         Stable runtime parameters and mutable runtime state.
-    eeg, gaze : object, optional
-        Configured EEG sender and EyeLink wrapper used by ``ctx.send(...)``.
+    eeg, tracker : object, optional
+        Configured EEG sender and EyeLink tracker used by ``ctx.send(...)``.
     global_actions : sequence, optional
         Researcher global-key actions. When omitted, default pause and quit
         actions are enabled.
@@ -68,7 +68,7 @@ class Timeline:
         params: Optional[Dict[str, Any]] = None,
         state: Optional[Dict[str, Any]] = None,
         eeg: Optional[Any] = None,
-        gaze: Optional[Any] = None,
+        tracker: Optional[Any] = None,
         global_actions: Optional[Sequence[Any]] = None,
         use_default_global_actions: bool = True,
     ) -> None:
@@ -83,7 +83,7 @@ class Timeline:
         self.params = dict(params or {})
         self.state = dict(state or {})
         self.eeg = eeg
-        self.gaze = gaze
+        self.tracker = tracker
         self.global_actions = coerce_global_actions(global_actions, use_defaults=use_default_global_actions)
         if global_actions is None and use_default_global_actions:
             _attach_default_quit_screen(self.global_actions)
@@ -204,7 +204,7 @@ class Timeline:
         """
         win = self._require_window()
         visual = _load_psychopy_visual()
-        text_stim = visual.TextStim(win, text=str(text), **dict(text_kwargs or {}))
+        text_stim = visual.TextStim(win, text=str(text), **_default_text_kwargs(text_kwargs))
         stimuli = _make_instruction_stimuli(
             visual,
             win,
@@ -232,6 +232,10 @@ class Timeline:
         prompt_text: Optional[str] = None,
         image_kwargs: Optional[Dict[str, Any]] = None,
         prompt_kwargs: Optional[Dict[str, Any]] = None,
+        image_units: str = "pix",
+        image_size: Optional[Sequence[float]] = None,
+        scale: Union[float, str] = 1.0,
+        pos: Sequence[float] = (0, 0),
     ) -> Screen:
         """Create an image screen without running it.
 
@@ -249,6 +253,15 @@ class Timeline:
             Keyword arguments forwarded to ``psychopy.visual.ImageStim``.
         prompt_kwargs : dict, optional
             Keyword arguments forwarded to the prompt ``TextStim``.
+        image_units : str, optional
+            Units used for image position and size. Defaults to ``"pix"``.
+        image_size : sequence, optional
+            Optional image size forwarded to ``ImageStim(size=...)``.
+        scale : float or "auto", optional
+            Positive image scale factor. Use ``"auto"`` to fit the image to
+            the window while preserving its aspect ratio.
+        pos : sequence, optional
+            Image position in ``image_units``.
 
         Returns
         -------
@@ -257,7 +270,18 @@ class Timeline:
         """
         win = self._require_window()
         visual = _load_psychopy_visual()
-        image_stim = visual.ImageStim(win, image=str(image), **dict(image_kwargs or {}))
+        image_stim = visual.ImageStim(
+            win,
+            image=str(image),
+            **_image_stim_kwargs(
+                image_kwargs=image_kwargs,
+                image_units=image_units,
+                image_size=image_size,
+                pos=pos,
+                scale=scale,
+            ),
+        )
+        _apply_image_scale(image_stim, win, scale)
         stimuli = _make_instruction_stimuli(
             visual,
             win,
@@ -401,7 +425,7 @@ class Timeline:
 
     def send_gaze(self, message: str) -> None:
         """Send one EyeLink message through the configured tracker."""
-        send_gaze(self.gaze, self.state, str(message))
+        send_gaze(self.tracker, self.state, str(message))
         return None
 
     def get_last_data(self, kind: str = "raw", unit: str = "screen") -> DataRows:
@@ -512,6 +536,7 @@ class Timeline:
                 trial_data=dict(ctx.trial_data),
                 params=self.params,
                 state=self.state,
+                tracker=TrackerRuntime(self.tracker),
                 screen=screen,
             )
             self._prepare_screen_run(screen)
@@ -533,6 +558,7 @@ class Timeline:
             trial_data=dict(ctx.trial_data),
             params=self.params,
             state=self.state,
+            tracker=TrackerRuntime(self.tracker),
             screen=screen,
         )
         self._prepare_screen_run(screen)
@@ -562,6 +588,7 @@ class Timeline:
             trial_data=dict(trial_data),
             params=self.params,
             state=self.state,
+            tracker=TrackerRuntime(self.tracker),
         )
 
     def _coerce_trial_unit(self, unit: Any) -> Any:
@@ -768,10 +795,93 @@ def _make_prompt_stimulus(
     text = str(prompt_text)
     if not text:
         return None
-    kwargs: Dict[str, Any] = {"units": "norm", "pos": (0, -0.85)}
+    kwargs: Dict[str, Any] = {
+        "color": "#000000",
+        "colorSpace": "hex",
+        "units": "height",
+        "height": 0.03,
+        "pos": (0.0, -0.45),
+        "alignHoriz": "center",
+        "alignVert": "center",
+        "wrapWidth": 1.6,
+    }
     kwargs.update(dict(prompt_kwargs or {}))
     prompt = visual.TextStim(win, text=text, **kwargs)
     return wrap_stimulus(prompt, label="prompt")
+
+
+def _default_text_kwargs(text_kwargs: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Return relative-unit defaults for timeline-owned text screens."""
+    kwargs: Dict[str, Any] = {
+        "color": "#000000",
+        "colorSpace": "hex",
+        "units": "height",
+        "height": 0.033,
+        "alignHoriz": "center",
+        "alignVert": "center",
+        "wrapWidth": 1.6,
+    }
+    kwargs.update(dict(text_kwargs or {}))
+    return kwargs
+
+
+def _image_stim_kwargs(
+    image_kwargs: Optional[Dict[str, Any]],
+    image_units: str,
+    image_size: Optional[Sequence[float]],
+    pos: Sequence[float],
+    scale: Union[float, str],
+) -> Dict[str, Any]:
+    """Return ImageStim kwargs with explicit image screen defaults."""
+    _validate_image_scale(scale)
+    kwargs = dict(image_kwargs or {})
+    kwargs.setdefault("units", "norm" if scale == "auto" else str(image_units))
+    kwargs.setdefault("pos", tuple(pos))
+    if image_size is not None:
+        kwargs.setdefault("size", tuple(image_size))
+    return kwargs
+
+
+def _validate_image_scale(scale: Union[float, str]) -> None:
+    """Validate image scale before ImageStim construction."""
+    if scale == "auto":
+        return
+    if isinstance(scale, bool) or not isinstance(scale, (int, float)):
+        raise ValueError("scale must be either 'auto' or a positive number.")
+    if float(scale) <= 0:
+        raise ValueError("scale must be either 'auto' or a positive number.")
+
+
+def _apply_image_scale(image_stim: Any, win: Any, scale: Union[float, str]) -> None:
+    """Apply numeric or automatic image scaling to an ImageStim."""
+    if scale == "auto":
+        image_stim.size = _auto_image_size(image_stim, win)
+        return
+    if float(scale) == 1.0:
+        return
+    stim_w, stim_h = (float(value) for value in image_stim.size)
+    image_stim.size = (stim_w * float(scale), stim_h * float(scale))
+
+
+def _auto_image_size(image_stim: Any, win: Any) -> tuple:
+    """Return a norm-units image size that fits the window aspect ratio."""
+    frame_size = getattr(win, "frameBufferSize", None)
+    if frame_size is not None and len(frame_size) == 2:
+        win_w, win_h = (float(value) for value in frame_size)
+    else:
+        win_w, win_h = (float(value) for value in getattr(win, "size", (0, 0)))
+    native_size = getattr(image_stim, "_origSize", None)
+    if native_size is not None and len(native_size) == 2:
+        img_w, img_h = (abs(float(value)) for value in native_size)
+    else:
+        img_w, img_h = (abs(float(value)) for value in image_stim.size)
+    if win_w <= 0 or win_h <= 0 or img_w <= 0 or img_h <= 0:
+        return (2.0, 2.0)
+    win_ratio = win_w / win_h
+    img_ratio = img_w / img_h
+    if img_ratio >= win_ratio:
+        return (2.0, 2.0 * (win_ratio / img_ratio))
+    return (2.0 * (img_ratio / win_ratio), 2.0)
 
 
 class _LazyTextStim:
