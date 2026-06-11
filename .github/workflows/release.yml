@@ -12,7 +12,6 @@ jobs:
   release:
     name: Build and publish GitHub Release
     runs-on: ubuntu-latest
-    if: contains(github.event.head_commit.message, '[release]')
     env:
       PYTHONPATH: src
 
@@ -63,15 +62,21 @@ jobs:
           print(f"tag=v{version}")
           PY
 
-      - name: Stop if release tag already exists
+      - name: Check whether release tag exists
+        id: release_tag
         run: |
-          if git rev-parse "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+          git fetch --tags --force
+          if git rev-parse -q --verify "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null; then
             echo "Tag ${{ steps.version.outputs.tag }} already exists."
-            echo "Bump project.version in pyproject.toml before merging into main."
-            exit 1
+            echo "Release creation will be skipped."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Tag ${{ steps.version.outputs.tag }} does not exist."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Read release notes from changelog
+        if: steps.release_tag.outputs.exists != 'true'
         run: |
           python - <<'PY'
           import re
@@ -83,7 +88,7 @@ jobs:
               raise SystemExit("Could not read project.version from pyproject.toml.")
           version = version_match.group(1)
           changelog = Path("CHANGELOG.md").read_text()
-          pattern = rf"^##\s+{re.escape(version)}(?:\s+-\s+[^\n]*)?\n(?P<body>.*?)(?=^##\s+|\Z)"
+          pattern = rf"^##[ \t]+{re.escape(version)}(?:[ \t]+-[^\n]*)?\n(?P<body>.*?)(?=^##[ \t]+|\Z)"
           match = re.search(pattern, changelog, flags=re.MULTILINE | re.DOTALL)
 
           if match is None:
@@ -101,6 +106,7 @@ jobs:
           PY
 
       - name: Create GitHub Release
+        if: steps.release_tag.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
