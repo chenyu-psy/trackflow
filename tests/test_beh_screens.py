@@ -256,12 +256,9 @@ class BehaviorScreenTests(unittest.TestCase):
             [
                 {
                     "screen_index": 0,
-                    "response": "space",
+                    "response_type": "key",
+                    "response_value": "space",
                     "rt": 0.1,
-                    "markers": [],
-                    "messages": [],
-                    "trial_status": "accepted",
-                    "rejection": "no",
                 }
             ],
         )
@@ -287,7 +284,7 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(screen)
 
-        self.assertEqual(timeline.records[0]["response"], "space")
+        self.assertEqual(timeline.records[0]["response_value"], "space")
         self.assertEqual(timeline.records[0]["rt"], 0.1)
 
     def test_key_response_without_choices_waits_until_duration(self):
@@ -308,7 +305,8 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(screen)
 
-        self.assertIsNone(timeline.records[0]["response"])
+        self.assertEqual(timeline.records[0]["response_type"], "key")
+        self.assertIsNone(timeline.records[0]["response_value"])
         self.assertIsNone(timeline.records[0]["rt"])
         self.assertNotIn("pause_experiment", timeline.state)
         self.assertEqual(win.flip_calls, 2)
@@ -326,7 +324,8 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(screen)
 
-        self.assertIsNone(timeline.records[0]["response"])
+        self.assertEqual(timeline.records[0]["response_type"], "none")
+        self.assertIsNone(timeline.records[0]["response_value"])
         self.assertIsNone(timeline.records[0]["rt"])
         self.assertEqual(win.flip_calls, 2)
 
@@ -359,12 +358,9 @@ class BehaviorScreenTests(unittest.TestCase):
             [
                 {
                     "screen_index": 0,
-                    "response": "space",
+                    "response_type": "key",
+                    "response_value": "space",
                     "rt": 0.2,
-                    "markers": [],
-                    "messages": [],
-                    "trial_status": "accepted",
-                    "rejection": "no",
                 }
             ],
         )
@@ -391,12 +387,9 @@ class BehaviorScreenTests(unittest.TestCase):
             [
                 {
                     "screen_index": 0,
-                    "response": None,
+                    "response_type": "key",
+                    "response_value": None,
                     "rt": None,
-                    "markers": [],
-                    "messages": [],
-                    "trial_status": "accepted",
-                    "rejection": "no",
                 }
             ],
         )
@@ -474,8 +467,8 @@ class BehaviorScreenTests(unittest.TestCase):
 
         row = timeline.records[0]
         self.assertEqual(row["flip_count_at_marker"], 1)
-        self.assertEqual(row["markers"], [])
-        self.assertEqual(row["messages"], [])
+        self.assertNotIn("markers", row)
+        self.assertNotIn("messages", row)
         self.assertEqual(eeg_sender.sent, [21])
         self.assertEqual(gaze_sender.messages, ["sample"])
 
@@ -500,7 +493,7 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(trial, trial_data={"condition": "right"})
 
-        self.assertEqual(timeline.records[0]["markers"], [])
+        self.assertNotIn("markers", timeline.records[0])
         self.assertEqual(timeline.records[0]["EEG"], 42)
         self.assertEqual(eeg_sender.sent, [42])
 
@@ -517,8 +510,8 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(screen)
 
-        self.assertEqual(timeline.records[0]["markers"], [])
-        self.assertEqual(timeline.records[0]["messages"], [])
+        self.assertNotIn("markers", timeline.records[0])
+        self.assertNotIn("messages", timeline.records[0])
         self.assertEqual(eeg_sender.sent, [21])
 
     def test_send_gaze_sends_message_only(self):
@@ -534,8 +527,8 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(screen)
 
-        self.assertEqual(timeline.records[0]["markers"], [])
-        self.assertEqual(timeline.records[0]["messages"], [])
+        self.assertNotIn("markers", timeline.records[0])
+        self.assertNotIn("messages", timeline.records[0])
         self.assertEqual(gaze_sender.messages, ["sample"])
 
     def test_send_failure_sets_pause_state_without_row_record(self):
@@ -551,7 +544,7 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(screen)
 
-        self.assertEqual(timeline.records[0]["markers"], [])
+        self.assertNotIn("markers", timeline.records[0])
         self.assertTrue(timeline.state["pause_experiment"])
         self.assertIn("21", timeline.state["sync_error"])
 
@@ -579,8 +572,8 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(screen)
 
-        self.assertEqual(timeline.records[0]["markers"], [])
-        self.assertEqual(timeline.records[0]["messages"], [])
+        self.assertNotIn("markers", timeline.records[0])
+        self.assertNotIn("messages", timeline.records[0])
         self.assertEqual(timeline.state, {})
 
     def test_on_finish_can_read_final_response_fields(self):
@@ -589,7 +582,7 @@ class BehaviorScreenTests(unittest.TestCase):
 
         def mark_response(ctx, data):
             """Record response data at the finish hook."""
-            calls.append((data["response"], data["rt"], ctx.win.flip_calls))
+            calls.append((data["response_value"], data["rt"], ctx.win.flip_calls))
             data["response_marked"] = True
 
         screen = beh_timeline.Screen(
@@ -799,6 +792,76 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertEqual([row["condition"] for row in timeline.records], ["practice", "left", "right"])
         self.assertEqual([row["screen_index"] for row in timeline.records], [0, 0, 0])
 
+    def test_trial_group_stores_one_primary_row_per_completed_screen(self):
+        """A timeline trial should group screens without replacing screen-row storage."""
+        formatted_rows = []
+
+        def finish_response(ctx, data):
+            """Record that hooks can edit the final screen row before storage."""
+            data["finished_by_hook"] = data["response_value"] == "space"
+
+        def format_summary(rows):
+            """Create user-formatted output from the current run's screen rows."""
+            formatted_rows.append([dict(row) for row in rows])
+            return {
+                "plan_id": rows[0]["plan_id"],
+                "screen_count": len(rows),
+                "response": rows[-1]["response_value"],
+            }
+
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+        fixation = timeline.make_screen(
+            stimuli=[FakeStim()],
+            duration=0.1,
+            data={"screen_name": "fixation", "phase": "fix"},
+        )
+        response = timeline.make_screen(
+            stimuli=[FakeStim()],
+            duration=1.0,
+            response="key",
+            choices=["space"],
+            data={"screen_name": "response", "phase": "probe"},
+            on_finish=finish_response,
+        )
+        trial = timeline.make_trial(screens=[fixation, response], data_format=format_summary)
+        core = FakeCore([0.0, 0.0, 0.2, 1.0, 1.0, 1.2])
+        event = FakeEvent(key_batches=[[], ["space"]])
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                timeline.run(trial, trial_data={"plan_id": "exp_0001", "condition": "left"})
+
+        raw_rows = timeline.get_data().to_list()
+        summary_rows = timeline.get_data(kind="summary").to_list()
+        self.assertEqual([row["screen_name"] for row in raw_rows], ["fixation", "response"])
+        self.assertEqual([row["screen_index"] for row in raw_rows], [0, 1])
+        self.assertEqual([row["condition"] for row in raw_rows], ["left", "left"])
+        self.assertEqual(raw_rows[1]["response_value"], "space")
+        self.assertTrue(raw_rows[1]["finished_by_hook"])
+        self.assertEqual(
+            summary_rows,
+            [
+                {
+                    "plan_id": "exp_0001",
+                    "screen_count": 2,
+                    "response": "space",
+                }
+            ],
+        )
+        self.assertEqual(formatted_rows[0][0]["screen_name"], "fixation")
+        self.assertEqual(formatted_rows[0][1]["screen_name"], "response")
+
+    def test_data_collection_name_matches_supported_data_access_api(self):
+        """Timeline data access should return the jsPsych-like collection view."""
+        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+        timeline.records.append({"screen_name": "sample", "condition": "left"})
+
+        rows = timeline.get_data(condition="left")
+
+        self.assertIsInstance(rows, beh.data.DataCollection)
+        self.assertIs(beh.data.DataRows, beh.data.DataCollection)
+        self.assertEqual(rows.to_list(), [{"screen_name": "sample", "condition": "left"}])
+
     def test_timeline_run_rejects_trial_data_lists(self):
         """Multiple planned rows should be run with an explicit user loop."""
         timeline = beh.timeline.setup_timeline(win=FakeWindow())
@@ -917,8 +980,8 @@ class BehaviorScreenTests(unittest.TestCase):
 
         def interrupt_trial(ctx, data, elapsed):
             """Interrupt the trial with additional data."""
+            data["reason"] = "eye_movement"
             ctx.break_trial(
-                reason="eye_movement",
                 screen=feedback_screen,
                 data={"eye_x": 12.5, "eye_y": -3.0},
             )
@@ -956,9 +1019,11 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertEqual(len(timeline.records), 1)
         row = timeline.records[0]
         self.assertEqual(row["screen_name"], "sample")
-        self.assertEqual(row["trial_status"], "interrupted")
-        self.assertEqual(row["interruption"], "eye_movement")
-        self.assertEqual(row["rejection"], "no")
+        self.assertEqual(row["status"], "interrupted")
+        self.assertEqual(row["reason"], "eye_movement")
+        self.assertNotIn("trial_status", row)
+        self.assertNotIn("interruption", row)
+        self.assertNotIn("rejection", row)
         self.assertEqual(row["eye_x"], 12.5)
         self.assertEqual(row["eye_y"], -3.0)
         self.assertEqual(state["completed_plan_ids"], [])
@@ -972,7 +1037,8 @@ class BehaviorScreenTests(unittest.TestCase):
         def interrupt_trial(ctx, data, elapsed):
             """Interrupt the trial after recording screen-level fields."""
             data["phase_value"] = "sample_seen"
-            ctx.break_trial(reason="early_press", data={"early_key": "z"})
+            data["reason"] = "early_press"
+            ctx.break_trial(data={"early_key": "z"})
 
         def format_summary(rows):
             """Build a summary row from the interrupted trial's partial data."""
@@ -1017,10 +1083,12 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertEqual(timeline.summary_records[0]["plan_id"], "exp_0001")
         self.assertEqual(timeline.summary_records[0]["phase_value"], "sample_seen")
         self.assertEqual(timeline.summary_records[0]["early_key"], "z")
-        self.assertEqual(timeline.summary_records[0]["trial_status"], "interrupted")
-        self.assertEqual(timeline.summary_records[0]["interruption"], "early_press")
+        self.assertNotIn("status", timeline.summary_records[0])
+        self.assertNotIn("trial_status", timeline.summary_records[0])
+        self.assertNotIn("interruption", timeline.summary_records[0])
         self.assertEqual(timeline.records[0]["screen_name"], "probe_delay")
-        self.assertEqual(timeline.records[0]["trial_status"], "interrupted")
+        self.assertEqual(timeline.records[0]["status"], "interrupted")
+        self.assertEqual(timeline.records[0]["reason"], "early_press")
 
     def test_timeline_run_rejects_unit_sequences(self):
         """Multiple units should be run with explicit calls."""
@@ -1046,7 +1114,7 @@ class BehaviorScreenTests(unittest.TestCase):
         row = timeline.records[0]
         self.assertTrue(timeline.state["pause_experiment"])
         self.assertEqual(row["global_key_action"], "pause_requested")
-        self.assertIsNone(row["response"])
+        self.assertIsNone(row["response_value"])
 
     def test_f12_quit_global_action_ends_screen_and_sets_state(self):
         """Researcher F12 should request quit and show a confirmation screen."""
@@ -1067,7 +1135,7 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertFalse(timeline.state["quit_confirmed"])
         self.assertEqual(row["global_key_action"], "quit_requested")
         self.assertEqual(timeline.records[1]["screen_name"], "quit_confirmation")
-        self.assertEqual(timeline.records[1]["response"], "n")
+        self.assertEqual(timeline.records[1]["response_value"], "n")
 
     def test_global_key_conflict_is_checked_before_screen_runs(self):
         """Participant responses should not reuse researcher fallback keys."""
@@ -1284,7 +1352,7 @@ class BehaviorScreenTests(unittest.TestCase):
                 screens=[screen],
                 data_format=lambda data: {
                     "plan_id": data[0]["plan_id"],
-                    "response": data[0]["response"],
+                    "response": data[0]["response_value"],
                 },
             )
             core = FakeCore([0.0, 0.0, 0.1])
@@ -1309,8 +1377,8 @@ class BehaviorScreenTests(unittest.TestCase):
             self.assertEqual(summary_rows[0]["plan_id"], "exp_0001")
             self.assertEqual(loaded_meta["completed_plan_ids"], ["exp_0001"])
 
-    def test_rejected_trial_is_written_without_completion_or_retry(self):
-        """Rejected rows should be auditable while retry policy stays user-managed."""
+    def test_nonaccepted_custom_trial_does_not_add_historical_rejection_fields(self):
+        """Nonaccepted custom outcomes should not add rejection compatibility fields."""
         class FakeTrialRunner:
             """Trial-like object that rejects every run."""
 
@@ -1335,10 +1403,16 @@ class BehaviorScreenTests(unittest.TestCase):
         result = timeline.run(FakeTrialRunner(), trial_data=rows[0], return_status=True)
         default_result = timeline.run(FakeTrialRunner(), trial_data=rows[1])
 
-        statuses = [row["trial_status"] for row in timeline.summary_records]
         self.assertFalse(result)
         self.assertIsNone(default_result)
-        self.assertEqual(statuses, ["rejected", "rejected"])
+        self.assertEqual(timeline.summary_records, [{"plan_id": "exp_0001"}, {"plan_id": "exp_0002"}])
+        self.assertEqual(
+            timeline.records,
+            [
+                {"plan_id": "exp_0001", "block_id": 1},
+                {"plan_id": "exp_0002", "block_id": 1},
+            ],
+        )
         self.assertEqual(state["completed_plan_ids"], [])
 
     def test_accepted_custom_trial_returns_true_and_marks_completion(self):
@@ -1352,7 +1426,6 @@ class BehaviorScreenTests(unittest.TestCase):
                 plan_id = row["plan_id"]
                 return beh_timeline.TrialOutcome(
                     status="accepted",
-                    reason="no",
                     row={"plan_id": plan_id},
                     screen_rows=[{"plan_id": plan_id}],
                 )

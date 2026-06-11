@@ -1,10 +1,10 @@
 # Behavior Timeline
 
 Timelines are the behavior runtime API. A timeline owns the PsychoPy window,
-creates runtime-owned screens and ordered screen groups, runs them, stores
-completed rows, writes optional raw JSONL and summary CSV files, manages
-completion state, exposes context helpers for EEG and eye tracking, and handles
-researcher safety keys.
+creates runtime-owned screens and ordered screen groups, runs them, stores one
+flat row per completed screen, writes optional raw JSONL and summary CSV files,
+manages completion state, exposes context helpers for EEG and eye tracking, and
+handles researcher safety keys.
 
 ## Overview
 
@@ -13,6 +13,11 @@ screens into trial-like procedures, record completed screen rows, and provide a
 single runtime context for hooks. The timeline does not define the scientific
 procedure; ordinary Python control flow decides when to create and run each
 unit.
+
+The data model follows the useful part of jsPsych's trial data design:
+`trackflow` treats each completed `Screen` as the data-producing unit. A
+`trackflow` `Trial` is a screen-sequence runner, similar to a jsPsych timeline
+or procedure node.
 
 ```python
 from trackflow import beh
@@ -152,9 +157,13 @@ image_instruction = timeline.make_image_screen(
 )
 ```
 
-When a timeline runs a screen, the row is built from current `trial_data`, the
-screen's own `data`, response fields, and send-record containers. Readable labels
-such as `screen_name` are ordinary data fields.
+When a timeline runs a screen, it creates one primary raw row. The row is built
+from current `trial_data`, then the screen's own `data`, then
+timeline-managed fields `screen_index`, `response_type`, `response_value`, and
+`rt`. Lifecycle hooks can edit the row before storage; use
+`on_finish(ctx, data)` when the value depends on the final response. Marker,
+message, condition, and readable label fields such as `screen_name` are
+ordinary data fields that experiment code should add explicitly.
 
 ## Creating Trials
 
@@ -180,15 +189,15 @@ trial = timeline.make_trial(
     screens=[fixation_screen, sample_screen, response_screen],
     data_format=lambda screen_rows: {
         "plan_id": screen_rows[0]["plan_id"],
-        "response": screen_rows[-1]["response"],
+        "response": screen_rows[-1]["response_value"],
     },
 )
 ```
 
-The built-in sequence runner presents screens in order, collects their raw
-screen rows, and optionally creates one trial-level summary row with
-`data_format`. It does not own the PsychoPy window or output files; those
-remain timeline responsibilities.
+The built-in sequence runner presents screens in order and collects one raw
+row per completed screen. It can also create one user-formatted summary row
+with `data_format`. It does not own the PsychoPy window, raw data source, or
+output files; those remain timeline responsibilities.
 
 ## Running Units
 
@@ -248,31 +257,39 @@ for row in trial_data:
 ## Trial Summaries
 
 `data_format(screen_rows)` receives only the raw screen rows from the current
-trial run and returns one optional summary row. Raw screen rows and summary
-rows are stored separately so screen-level timing/response data stays intact.
+trial run and returns one optional user-formatted row. This helps experiment
+scripts create the data format they want during the run. Raw screen rows remain
+the timeline's primary source data; summary rows are a separate derived output
+so screen-level timing/response data stays intact.
 
 ## Screen-Level Interruptions
 
 Use `on_finish(ctx, data)` when code needs the final row after built-in response
 collection. Use `on_frame(ctx, data, elapsed)` when a screen needs real-time
 checks during presentation. The frame hook can call `ctx.break_trial(...)` to
-stop the current screen and trial immediately. Interrupted trials are saved with
-`trial_status="interrupted"` and an `interruption` reason, are not marked
-complete in completion state, and return `False` when
-`return_status=True`.
+stop the current screen and trial immediately. Interrupted screen rows are
+saved with `status="interrupted"`, are not marked complete in completion
+state, and return `False` when `return_status=True`.
 
 Function:
 
 ```python
-ctx.break_trial(reason="...", screen=feedback_screen, data={...})
+ctx.break_trial(screen=feedback_screen, data={...})
 ```
 
 Arguments:
 
-- `reason`: short cause saved as the interruption reason.
 - `screen`: optional feedback screen displayed immediately and unrecorded.
 - `data`: optional fields merged into the interrupted screen row and trial
   outcome details.
+
+Save interruption reasons explicitly in the row before breaking, or pass them
+through `data={...}`:
+
+```python
+data["reason"] = "early_response"
+ctx.break_trial()
+```
 
 Eye tracking uses the same interruption mechanism. Create the tracker with
 `trackflow.gaze`, pass it to `setup_timeline(..., tracker=tracker)`, then call
@@ -295,8 +312,8 @@ def check_gaze(ctx, data, elapsed):
     try:
         ctx.tracker.check_fixation()
     except gaze.GazeBreakError as err:
+        data["reason"] = "eye_movement"
         ctx.break_trial(
-            reason="eye_movement",
             screen=eye_feedback_screen,
             data={"eye_x": err.x, "eye_y": err.y},
         )
@@ -315,7 +332,8 @@ The same mechanism can mark an early press during a pre-response screen:
 ```python
 def check_early_press(ctx, data, elapsed):
     if participant_pressed_too_early():
-        ctx.break_trial(reason="early_press")
+        data["reason"] = "early_press"
+        ctx.break_trial()
 ```
 
 ## Reading Completed Data
@@ -369,7 +387,6 @@ class CustomTrial:
         # Custom PsychoPy procedure here.
         return beh.timeline.TrialOutcome(
             status="accepted",
-            reason="no",
             row=row,
             screen_rows=[],
         )

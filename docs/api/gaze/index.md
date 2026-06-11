@@ -42,8 +42,8 @@ def check_gaze(ctx, data, elapsed):
     try:
         ctx.tracker.check_fixation()
     except gaze.GazeBreakError as err:
+        data["reason"] = "eye_movement"
         ctx.break_trial(
-            reason="eye_movement",
             data={"eye_x": err.x, "eye_y": err.y},
         )
 

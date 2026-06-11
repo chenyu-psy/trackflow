@@ -54,7 +54,6 @@ class SearchTrial:
 
         return beh.timeline.TrialOutcome(
             status="accepted",
-            reason="no",
             row={"plan_id": ctx.trial_data["plan_id"]},
             screen_rows=screen_rows,
         )

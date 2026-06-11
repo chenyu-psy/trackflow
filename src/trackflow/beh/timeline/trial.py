@@ -24,7 +24,7 @@ class _Trial:
     def run(self, ctx: RunContext) -> TrialOutcome:
         """Run this screen group and return an accepted outcome."""
         if self.run_if is not None and not bool(self.run_if(ctx)):
-            return TrialOutcome(status="accepted", reason="no", screen_rows=[])
+            return TrialOutcome(status="accepted", screen_rows=[])
 
         screen_rows: List[Dict[str, Any]] = []
         for screen_index, screen in enumerate(self.screens):
@@ -41,7 +41,6 @@ class _Trial:
                 summary_row = self._format_summary(screen_rows)
                 return TrialOutcome(
                     status="interrupted",
-                    reason=err.reason,
                     row=summary_row,
                     screen_rows=screen_rows,
                     details=dict(err.data),
@@ -58,7 +57,6 @@ class _Trial:
 
         return TrialOutcome(
             status="accepted",
-            reason="no",
             row=self._format_summary(screen_rows),
             screen_rows=screen_rows,
         )

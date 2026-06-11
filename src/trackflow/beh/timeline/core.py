@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 
 from .. import _psychopy
-from ..data import DataRows, SummaryWriter, append_jsonl
+from ..data import DataCollection, SummaryWriter, append_jsonl
 from ..keys import (
     GlobalKeyAction,
     coerce_global_actions,
@@ -371,7 +371,7 @@ class Timeline:
             return complete
         return None
 
-    def get_data(self, kind: str = "raw", **filters: Any) -> DataRows:
+    def get_data(self, kind: str = "raw", **filters: Any) -> DataCollection:
         """Return completed rows matching field filters.
 
         Parameters
@@ -383,11 +383,11 @@ class Timeline:
 
         Returns
         -------
-        DataRows
+        DataCollection
             Queryable row view.
         """
         rows = self.records if kind == "raw" else self.summary_records
-        return DataRows(rows).filter(**filters)
+        return DataCollection(rows).filter(**filters)
 
     @property
     def code(self) -> Dict[str, int]:
@@ -428,7 +428,7 @@ class Timeline:
         send_gaze(self.tracker, self.state, str(message))
         return None
 
-    def get_last_data(self, kind: str = "raw", unit: str = "screen") -> DataRows:
+    def get_last_data(self, kind: str = "raw", unit: str = "screen") -> DataCollection:
         """Return the most recent completed screen, trial, block, or session.
 
         Parameters
@@ -440,22 +440,22 @@ class Timeline:
 
         Returns
         -------
-        DataRows
+        DataCollection
             Rows from the latest requested unit, or an empty view when no rows
             exist.
         """
         rows = self.records if kind == "raw" else self.summary_records
         if not rows:
-            return DataRows([])
+            return DataCollection([])
         unit_name = str(unit).strip().lower()
         if unit_name == "screen":
-            return DataRows([rows[-1]])
+            return DataCollection([rows[-1]])
         if unit_name == "trial":
-            return DataRows(_latest_rows_by_fields(rows, ["session_id", "block_id", "trial_id"]))
+            return DataCollection(_latest_rows_by_fields(rows, ["session_id", "block_id", "trial_id"]))
         if unit_name == "block":
-            return DataRows(_latest_rows_by_fields(rows, ["session_id", "block_id"]))
+            return DataCollection(_latest_rows_by_fields(rows, ["session_id", "block_id"]))
         if unit_name == "session":
-            return DataRows(_latest_rows_by_fields(rows, ["session_id"]))
+            return DataCollection(_latest_rows_by_fields(rows, ["session_id"]))
         raise ValueError("unit must be 'screen', 'trial', 'block', or 'session'.")
 
     def handle_global_keys(self, ctx: RunContext, data: Dict[str, Any], event: Any) -> bool:
@@ -613,22 +613,12 @@ class Timeline:
         status = _normalize_outcome_status(outcome.status)
         for screen_row in outcome.screen_rows:
             row = dict(screen_row)
-            row.setdefault("trial_status", status)
             if status == "interrupted":
-                row.setdefault("interruption", outcome.reason)
-                row.setdefault("rejection", "no")
-            else:
-                row.setdefault("rejection", outcome.reason if status == "rejected" else "no")
+                row.setdefault("status", "interrupted")
             self._record_screen_row(row)
 
         if outcome.row is not None:
             summary_row = dict(outcome.row)
-            summary_row.setdefault("trial_status", status)
-            if status == "interrupted":
-                summary_row.setdefault("interruption", outcome.reason)
-                summary_row.setdefault("rejection", "no")
-            else:
-                summary_row.setdefault("rejection", outcome.reason if status == "rejected" else "no")
             self._record_summary_row(summary_row)
 
         if complete:
@@ -637,8 +627,6 @@ class Timeline:
     def _record_screen_row(self, row: Dict[str, Any]) -> None:
         """Append one raw screen row to memory and optional JSONL output."""
         out_row = dict(row)
-        out_row.setdefault("markers", [])
-        out_row.setdefault("messages", [])
         self.records.append(out_row)
         if self.raw_data_file is not None:
             append_jsonl(self.raw_data_file, out_row)
@@ -728,7 +716,7 @@ def _make_quit_confirmation_screen() -> Screen:
 
     def finish_quit(ctx: RunContext, data: Dict[str, Any]) -> None:
         """Apply the researcher Y/N quit confirmation response."""
-        response = str(data.get("response") or "").lower()
+        response = str(data.get("response_value") or "").lower()
         if response == "y":
             ctx.state["quit_confirmed"] = True
             _close_window_and_quit(ctx.win)

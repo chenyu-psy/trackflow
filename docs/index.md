@@ -12,7 +12,7 @@ deployment workflows.
 
 `trackflow` helps psychology researchers keep experiment scripts explicit while
 reusing the runtime pieces that often become repetitive across studies:
-behavior rows, trial summaries, interruption status, EyeLink setup,
+behavior rows, trial summaries, interrupted attempts, EyeLink setup,
 tracker-owned gaze-break monitoring, EEG marker sending, and timeline-owned
 send helpers.
 
@@ -24,8 +24,8 @@ consistent.
 The current public API is organized into three runtime areas:
 
 - `trackflow.beh` for timeline-owned behavior helpers organized into
-  timelines, stimuli, screens, trials, trial planning, interruption status, and
-  data output
+  timelines, stimuli, screens, trials, trial planning, interrupted attempts,
+  and data output
 - `trackflow.gaze` for EyeLink tracker setup, recording, and gaze-break
   monitoring
 - `trackflow.eeg` for EEG setup and marker sending

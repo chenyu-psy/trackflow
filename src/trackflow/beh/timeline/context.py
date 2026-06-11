@@ -11,20 +11,15 @@ class TrialInterrupted(Exception):
 
     def __init__(
         self,
-        reason: str,
         screen: Any = None,
         data: Optional[Dict[str, Any]] = None,
         row: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Store interruption metadata for trial outcome creation."""
-        reason_text = str(reason).strip()
-        if not reason_text:
-            raise ValueError("reason must be a non-empty string.")
-        self.reason = reason_text
         self.screen = screen
         self.data = dict(data or {})
         self.row = dict(row) if row is not None else None
-        super().__init__(reason_text)
+        super().__init__("interrupted")
 
 
 @dataclass
@@ -161,7 +156,6 @@ class RunContext:
 
     def break_trial(
         self,
-        reason: str,
         screen: Any = None,
         data: Optional[Dict[str, Any]] = None,
     ) -> None:
@@ -169,22 +163,21 @@ class RunContext:
 
         Parameters
         ----------
-        reason : str
-            Specific interruption cause, such as ``"eye_movement"`` or
-            ``"early_press"``.
         screen : object, optional
             Optional feedback screen to show immediately after the interrupted
             screen. The feedback screen is not recorded as a trial row.
         data : dict, optional
             Extra interruption fields to merge into the interrupted screen row
             and outcome details.
+            Use this or direct row edits for experiment-specific fields such as
+            ``{"reason": "early_response"}``.
 
         Returns
         -------
         None
             Raises an internal interruption signal consumed by the timeline.
         """
-        raise TrialInterrupted(reason=reason, screen=screen, data=data)
+        raise TrialInterrupted(screen=screen, data=data)
 
 
 @dataclass
@@ -194,10 +187,9 @@ class TrialOutcome:
     Parameters
     ----------
     status : str
-        ``"accepted"``, ``"rejected"``, or ``"interrupted"``.
+        ``"accepted"``, ``"interrupted"``, or a custom nonaccepted status.
     reason : str
-        ``"no"`` for accepted trials, or a readable rejection/interruption
-        cause.
+        Internal status detail retained for custom trial-like integrations.
     row : dict, optional
         Trial summary row.
     screen_rows : list[dict], optional
