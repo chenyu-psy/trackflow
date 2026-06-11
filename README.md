@@ -112,3 +112,19 @@ sample_screen = timeline.make_screen(
 
 timeline.run(sample_screen)
 ```
+
+## Development checks
+
+```bash
+uv sync --only-group dev --no-install-project
+PYTHONPATH=src uv run --no-sync pytest
+PYTHONPATH=src uv run --no-sync ruff check src tests
+PYTHONPATH=src uv run --no-sync mkdocs build --strict
+```
+
+## Documentation
+
+The documentation site is published with GitHub Pages after changes are merged
+into `main`:
+
+<https://chenyu-psy.github.io/trackflow/>
