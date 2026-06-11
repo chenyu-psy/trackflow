@@ -338,7 +338,7 @@ def _make_eyelink_display(win: Any, tracker: Any) -> Any:
             warnings.warn(msg, RuntimeWarning)
 
         def draw_line(self, x1: float, y1: float, x2: float, y2: float, colorindex: int) -> None:
-            """Draw crosshair lines on the camera image overlay."""
+            """Draw outline-only crosshair lines on the camera setup image."""
             if x1 < 0:
                 x1, x2 = x1 + 767, x2 + 767
                 y1, y2 = y1 + 639, y2 + 639
@@ -349,13 +349,14 @@ def _make_eyelink_display(win: Any, tracker: Any) -> Any:
                 self.window,
                 units="pix",
                 lineColor=color,
+                fillColor=None,
                 colorSpace="hex",
                 start=(x1, y1),
                 end=(x2, y2),
             ).draw()
 
         def draw_lozenge(self, x: float, y: float, width: float, height: float, colorindex: int) -> None:
-            """Draw an oval on the camera image overlay."""
+            """Draw an outline-only oval on the camera setup image."""
             color = self.colors.get(colorindex, "#000000")
             x = round(x + (0.5 * width)) - 96
             y = round((160 - y) - (0.5 * height)) - 80
@@ -363,6 +364,7 @@ def _make_eyelink_display(win: Any, tracker: Any) -> Any:
                 self.window,
                 units="pix",
                 lineColor=color,
+                fillColor=None,
                 colorSpace="hex",
                 pos=(x, y),
                 size=(width, height),
@@ -379,4 +381,3 @@ def _make_eyelink_display(win: Any, tracker: Any) -> Any:
             return mouse_pos, mouse_click
 
     return _RuntimeEyeLinkDisplay(win, tracker)
-
