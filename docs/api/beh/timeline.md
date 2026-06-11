@@ -54,7 +54,9 @@ Common arguments:
 - `eeg`: optional EEG sender used by `ctx.send(...)` and `ctx.send_eeg(...)`.
 - `tracker`: optional EyeLink tracker runtime used by `ctx.send(...)`,
   `ctx.send_gaze(...)`, and `ctx.tracker`.
-- `global_actions`: researcher safety keys such as pause or quit.
+- `enable_quit_keys` and `quit_keys`: locked researcher quit shortcuts.
+- `global_key_requests`: deferred researcher shortcuts as
+  `state_name -> key list`; pressing one sets `timeline.state[state_name]`.
 
 ```python
 timeline = beh.timeline.setup_timeline(

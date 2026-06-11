@@ -1,226 +1,98 @@
-"""Researcher global-key actions for behavior timelines.
+"""Researcher global-key bindings for behavior timelines.
 
-This module keeps pause and quit shortcuts separate from participant response
-keys. Modified shortcuts use PsychoPy ``event.globalKeys`` when available, and
-unmodified function-key fallbacks are polled inside the screen loop.
+Quit keys are owned by trackflow and always use the built-in quit flow.
+Task-level global keys are deferred requests: pressing one sets a timeline
+state flag that task code can consume at an appropriate checkpoint.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 
-__all__ = ["GlobalKeyAction"]
+QUIT_REQUEST_NAME = "quit_requested"
+DEFAULT_QUIT_KEYS = ["command + q", "ctrl + q", "F12"]
+
+__all__ = [
+    "DEFAULT_QUIT_KEYS",
+    "QUIT_REQUEST_NAME",
+    "build_request_bindings",
+    "fallback_key_map",
+    "find_response_key_conflicts",
+    "register_modified_shortcuts",
+]
 
 
 @dataclass
-class GlobalKeyAction:
-    """One researcher key action available during behavior screens.
-
-    Parameters
-    ----------
-    name : str
-        Short action name stored in raw rows when ``record`` is true.
-    keys : sequence[str]
-        Trigger strings such as ``"ctrl + p"`` or ``"F10"``.
-    set_state : dict, optional
-        Timeline state fields written when the action is triggered.
-    action : callable, optional
-        Extra callback called with the current run context.
-    end_screen : bool, optional
-        Whether the current screen should stop after the action.
-    screen : Screen, optional
-        Optional screen to show immediately after the current screen.
-    record : bool, optional
-        Whether to mark the raw screen row with ``global_key_action``.
-    """
+class _KeyBinding:
+    """Internal normalized binding from one action name to key triggers."""
 
     name: str
     keys: Sequence[str]
-    set_state: Dict[str, Any] = field(default_factory=dict)
-    action: Optional[Callable[[Any], None]] = None
-    end_screen: bool = False
-    screen: Optional[Any] = None
-    record: bool = True
 
     def __post_init__(self) -> None:
-        """Validate and normalize the action definition."""
+        """Validate and normalize the binding."""
         self.name = str(self.name).strip()
         if not self.name:
-            raise ValueError("global key action name must not be empty.")
-        self.keys = [str(key) for key in self.keys]
+            raise ValueError("global key binding name must not be empty.")
+        self.keys = [str(key) for key in self.keys if str(key).strip()]
         if not self.keys:
-            raise ValueError("global key action requires at least one key.")
-        self.set_state = dict(self.set_state or {})
+            raise ValueError("global key binding requires at least one key.")
 
 
-def make_default_global_actions() -> List[GlobalKeyAction]:
-    """Return the default researcher pause and quit actions.
-
-    Parameters
-    ----------
-    None
-
-    Returns
-    -------
-    list[GlobalKeyAction]
-        Pause uses ``command+p``, ``ctrl+p``, and ``F10``. Quit uses
-        ``command+q``, ``ctrl+q``, and ``F12``.
-    """
-    return [
-        GlobalKeyAction(
-            name="pause_requested",
-            keys=["command + p", "ctrl + p", "F10"],
-            set_state={"pause_experiment": True},
-            end_screen=False,
-        ),
-        GlobalKeyAction(
-            name="quit_requested",
-            keys=["command + q", "ctrl + q", "F12"],
-            set_state={"quit_requested": True},
-            end_screen=True,
-        ),
-    ]
+def build_request_bindings(global_key_requests: Optional[Mapping[str, Sequence[str]]]) -> List[_KeyBinding]:
+    """Return validated deferred request bindings from state-name mapping."""
+    bindings: List[_KeyBinding] = []
+    for state_name, keys in dict(global_key_requests or {}).items():
+        clean_name = str(state_name).strip()
+        if clean_name == QUIT_REQUEST_NAME:
+            raise ValueError("quit_requested is reserved for trackflow's built-in quit keys.")
+        bindings.append(_KeyBinding(clean_name, list(keys or [])))
+    return bindings
 
 
-def coerce_global_actions(actions: Optional[Sequence[Any]], use_defaults: bool = True) -> List[GlobalKeyAction]:
-    """Return validated global-key actions.
-
-    Parameters
-    ----------
-    actions : sequence, optional
-        ``GlobalKeyAction`` objects or dictionaries with matching fields.
-    use_defaults : bool, optional
-        Whether to use the default pause/quit actions when ``actions`` is
-        omitted.
-
-    Returns
-    -------
-    list[GlobalKeyAction]
-        Validated actions ready for registration and polling.
-    """
-    if actions is None:
-        if use_defaults:
-            return make_default_global_actions()
-        return []
-
-    out: List[GlobalKeyAction] = []
-    for action in actions:
-        if isinstance(action, GlobalKeyAction):
-            out.append(action)
-        elif isinstance(action, dict):
-            out.append(GlobalKeyAction(**action))
-        else:
-            raise TypeError("global_actions must contain GlobalKeyAction objects or dictionaries.")
-    return out
-
-
-def register_modified_shortcuts(event: Any, actions: Sequence[GlobalKeyAction], callback: Callable[[str], None]) -> None:
-    """Register modified global shortcuts with PsychoPy when available.
-
-    Parameters
-    ----------
-    event : psychopy.event module
-        Event module that may provide ``globalKeys``.
-    actions : sequence[GlobalKeyAction]
-        Actions whose modified triggers should be registered.
-    callback : callable
-        Function called with the action name when a shortcut fires.
-
-    Returns
-    -------
-    None
-        Adds global-key callbacks where the PsychoPy backend supports them.
-    """
+def register_modified_shortcuts(event: Any, bindings: Sequence[_KeyBinding], callback: Callable[[str], None]) -> None:
+    """Register modified global shortcuts with PsychoPy when available."""
     global_keys = getattr(event, "globalKeys", None)
     if global_keys is None or not hasattr(global_keys, "add"):
         return
 
-    for action in actions:
-        for key, modifiers in parse_action_keys(action):
+    for binding in bindings:
+        for key, modifiers in parse_binding_keys(binding):
             if not modifiers:
                 continue
-            _register_one_shortcut(global_keys, action.name, key, modifiers, callback)
+            _register_one_shortcut(global_keys, binding.name, key, modifiers, callback)
 
 
-def fallback_key_map(actions: Sequence[GlobalKeyAction]) -> Dict[str, GlobalKeyAction]:
-    """Return unmodified fallback keys mapped to their actions.
-
-    Parameters
-    ----------
-    actions : sequence[GlobalKeyAction]
-        Global actions to inspect.
-
-    Returns
-    -------
-    dict
-        Mapping from normalized key names such as ``"f10"`` to actions.
-    """
-    key_map: Dict[str, GlobalKeyAction] = {}
-    for action in actions:
-        for key, modifiers in parse_action_keys(action):
+def fallback_key_map(bindings: Sequence[_KeyBinding]) -> Dict[str, str]:
+    """Return unmodified fallback keys mapped to binding names."""
+    key_map: Dict[str, str] = {}
+    for binding in bindings:
+        for key, modifiers in parse_binding_keys(binding):
             if modifiers:
                 continue
-            key_map[key] = action
+            key_map[key] = binding.name
     return key_map
 
 
-def find_response_key_conflicts(screen_choices: Optional[Sequence[str]], actions: Sequence[GlobalKeyAction]) -> List[str]:
-    """Return global fallback keys that overlap participant key choices.
-
-    Parameters
-    ----------
-    screen_choices : sequence[str] or None
-        Allowed participant key choices. ``None`` means no participant key is
-        accepted.
-    actions : sequence[GlobalKeyAction]
-        Configured global key actions.
-
-    Returns
-    -------
-    list[str]
-        Conflicting unmodified global keys.
-    """
-    fallback_keys = sorted(fallback_key_map(actions).keys())
-    if not fallback_keys:
-        return []
-    if screen_choices is None:
+def find_response_key_conflicts(screen_choices: Optional[Sequence[str]], bindings: Sequence[_KeyBinding]) -> List[str]:
+    """Return global fallback keys that overlap participant key choices."""
+    fallback_keys = sorted(fallback_key_map(bindings).keys())
+    if not fallback_keys or screen_choices is None:
         return []
 
     response_keys = {normalize_key_name(key) for key in screen_choices}
     return [key for key in fallback_keys if key in response_keys]
 
 
-def parse_action_keys(action: GlobalKeyAction) -> List[Tuple[str, Tuple[str, ...]]]:
-    """Parse all trigger strings for one action.
-
-    Parameters
-    ----------
-    action : GlobalKeyAction
-        Action with researcher-friendly key strings.
-
-    Returns
-    -------
-    list[tuple[str, tuple[str, ...]]]
-        Normalized ``(key, modifiers)`` pairs.
-    """
-    return [parse_key_trigger(trigger) for trigger in action.keys]
+def parse_binding_keys(binding: _KeyBinding) -> List[Tuple[str, Tuple[str, ...]]]:
+    """Parse all trigger strings for one binding."""
+    return [parse_key_trigger(trigger) for trigger in binding.keys]
 
 
 def parse_key_trigger(trigger: str) -> Tuple[str, Tuple[str, ...]]:
-    """Parse one key trigger string.
-
-    Parameters
-    ----------
-    trigger : str
-        Key string such as ``"ctrl + P"`` or ``"F10"``.
-
-    Returns
-    -------
-    tuple
-        ``(key, modifiers)`` with lowercase names and spaces removed.
-    """
+    """Parse one key trigger such as ``"ctrl + P"`` or ``"F10"``."""
     parts = [part.strip().lower() for part in str(trigger).split("+")]
     parts = [part for part in parts if part]
     if not parts:
@@ -231,18 +103,7 @@ def parse_key_trigger(trigger: str) -> Tuple[str, Tuple[str, ...]]:
 
 
 def normalize_key_name(key: Any) -> str:
-    """Normalize one PsychoPy key name for comparison.
-
-    Parameters
-    ----------
-    key : object
-        Key name returned by PsychoPy or written by the researcher.
-
-    Returns
-    -------
-    str
-        Lowercase key name without surrounding spaces.
-    """
+    """Normalize one PsychoPy key name for comparison."""
     return str(key).strip().lower()
 
 
@@ -267,5 +128,4 @@ def _register_one_shortcut(
             name=name,
         )
     except ValueError:
-        # Some PsychoPy backends do not expose every modifier alias.
         return

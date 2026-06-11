@@ -9,7 +9,6 @@ from unittest import mock
 
 import trackflow
 from trackflow import beh
-from trackflow.beh import keys as beh_keys
 from trackflow.beh import preflight as beh_preflight
 from trackflow.beh import recovery as beh_recovery
 from trackflow.beh import timeline as beh_timeline
@@ -1103,7 +1102,10 @@ class BehaviorScreenTests(unittest.TestCase):
     def test_f10_pause_global_action_sets_state_without_participant_response(self):
         """Researcher F10 should request pause without becoming a response."""
         screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.3, response="key", choices=["space"])
-        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+        timeline = beh.timeline.setup_timeline(
+            win=FakeWindow(),
+            global_key_requests={"pause_experiment": ["F10"]},
+        )
         core = FakeCore([0.0, 0.0, 0.1, 0.4])
         event = FakeEvent(key_batches=[["f10"], []])
 
@@ -1113,7 +1115,7 @@ class BehaviorScreenTests(unittest.TestCase):
 
         row = timeline.records[0]
         self.assertTrue(timeline.state["pause_experiment"])
-        self.assertEqual(row["global_key_action"], "pause_requested")
+        self.assertEqual(row["global_key_action"], "pause_experiment")
         self.assertIsNone(row["response_value"])
 
     def test_f12_quit_global_action_ends_screen_and_sets_state(self):
@@ -1140,7 +1142,10 @@ class BehaviorScreenTests(unittest.TestCase):
     def test_global_key_conflict_is_checked_before_screen_runs(self):
         """Participant responses should not reuse researcher fallback keys."""
         screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=1.0, response="key", choices=["f10"])
-        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+        timeline = beh.timeline.setup_timeline(
+            win=FakeWindow(),
+            global_key_requests={"pause_experiment": ["F10"]},
+        )
 
         with self.assertRaises(ValueError):
             timeline.run(screen)
@@ -1148,7 +1153,10 @@ class BehaviorScreenTests(unittest.TestCase):
     def test_modified_global_shortcuts_register_with_psychopy_event(self):
         """Ctrl/command shortcuts should use PsychoPy globalKeys callbacks."""
         screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1)
-        timeline = beh.timeline.setup_timeline(win=FakeWindow())
+        timeline = beh.timeline.setup_timeline(
+            win=FakeWindow(),
+            global_key_requests={"pause_experiment": ["command + p", "ctrl + p"]},
+        )
         core = FakeCore([0.0, 0.0, 0.2])
         event = FakeEvent(key_batches=[[]])
 
@@ -1162,31 +1170,13 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertIn(("q", ("command",)), registered)
         self.assertIn(("q", ("ctrl",)), registered)
 
-    def test_custom_global_action_can_show_followup_screen(self):
-        """Action screens should run after the interrupted screen and save once."""
-        followup = beh_timeline.Screen(
-            stimuli=[FakeStim()],
-            duration=0.1,
-            data={"screen_name": "researcher_pause"},
-        )
-        action = beh_keys.GlobalKeyAction(
-            name="custom_pause",
-            keys=["F10"],
-            set_state={"pause_experiment": True},
-            end_screen=True,
-            screen=followup,
-        )
-        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=5.0, data={"screen_name": "task"})
-        timeline = beh.timeline.setup_timeline(win=FakeWindow(), global_actions=[action])
-        core = FakeCore([0.0, 0.0, 0.1, 0.1, 0.1, 0.3])
-        event = FakeEvent(key_batches=[["f10"], []])
-
-        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
-            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
-                timeline.run(screen)
-
-        self.assertEqual([row["screen_name"] for row in timeline.records], ["task", "researcher_pause"])
-        self.assertEqual(timeline.records[0]["global_key_action"], "custom_pause")
+    def test_quit_requested_cannot_be_deferred_global_request(self):
+        """Quit is reserved for trackflow's locked quit behavior."""
+        with self.assertRaisesRegex(ValueError, "quit_requested is reserved"):
+            beh.timeline.setup_timeline(
+                win=FakeWindow(),
+                global_key_requests={"quit_requested": ["F10"]},
+            )
 
     def test_preflight_checks_only_enabled_subsystems(self):
         """Preflight should skip disabled hardware checks."""

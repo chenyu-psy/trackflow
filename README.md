@@ -112,3 +112,69 @@ sample_screen = timeline.make_screen(
 
 timeline.run(sample_screen)
 ```
+
+## Package for a lab computer
+
+Use `trackflow package` when a PsychoPy lab computer should run the experiment
+without installing `trackflow`. Add a project-level `packaging_config.py` file:
+
+```python
+DESTINATION_ROOT = r"D:\trackflow_lab_copies"
+
+SHARED_PATHS = [
+    "assets",
+    "src/common",
+]
+
+GLOBAL_SETTINGS_OVERRIDES = {
+    "MONITOR.fullscr": True,
+    "MONITOR.resolution": [1920, 1080],
+}
+
+EXPERIMENTS = {
+    "exp1b": {
+        "settings": "src/exp1b/settings.py",
+        "entry_script": "src/exp1b/main.py",
+        "launcher_name": "run_exp1b.bat",
+        "python": None,
+        "paths": ["src/exp1b"],
+        "settings_overrides": {
+            "RUNTIME.realtime_tracker": True,
+            "RUNTIME.realtime_eeg": True,
+        },
+    },
+}
+```
+
+Then run:
+
+```bash
+trackflow package exp1b
+```
+
+The command copies the selected experiment paths plus `SHARED_PATHS`, respects
+`.gitignore`, vendors the current `trackflow` source into the copied project,
+writes `trackflow_vendored.json`, and creates a Windows launcher such as
+`run_exp1b.bat`.
+
+Deployment overrides are opt-in and only modify the copied settings file.
+Settings files should use literal top-level blocks such as:
+
+```python
+RUNTIME = {
+    "run_warmup": False,
+    "realtime_tracker": False,
+    "realtime_eeg": False,
+}
+
+MONITOR = {
+    "resolution": [1024, 768],
+    "fullscr": False,
+    "distance": 60,
+    "width": 53,
+}
+```
+
+Override keys use dotted paths such as `"MONITOR.fullscr"` and
+`"RUNTIME.run_warmup"`. Broad keyword replacement and old per-settings
+`PACKAGE` blocks are not supported.
