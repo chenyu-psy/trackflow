@@ -71,8 +71,9 @@ For planned trials, keep the plan in normal Python code and call
 
 ## Eye tracking and EEG
 
-Eye tracking and EEG sends are explicit. The experiment script chooses marker
-codes, message text, send timing, and saved data fields.
+Eye tracking and EEG sends are explicit. The tracker is the eye-tracking
+runtime object passed to the timeline; the experiment script chooses marker
+codes, message text, send timing, monitored phases, and saved data fields.
 
 ```python
 from trackflow import beh, eeg, gaze
@@ -89,14 +90,12 @@ sender = eeg.setup_port(
     debug=True,
     code={"sample": 21},
 )
+
 timeline = beh.timeline.setup_timeline(
     win=win,
-    gaze=tracker,
+    tracker=tracker,
     eeg=sender,
 )
-
-gaze_monitor = tracker.make_monitor(fixation=fix)
-gaze_monitor.start()
 
 def mark_sample(ctx, data):
     code = ctx.code["sample"]

@@ -152,9 +152,9 @@ class Screen:
         Returns
         -------
         dict
-            Raw screen row with response, RT, markers, and messages fields.
+            Raw screen row with response type, response value, and RT fields.
         """
-        out = _make_screen_row(row, self.data, screen_index)
+        out = _make_screen_row(row, self.data, screen_index, self.response)
         response_value = None
         rt = None
         try:
@@ -196,22 +196,21 @@ class Screen:
                 if elapsed >= self.response_start and response_value is None and self.response == "key":
                     response_value, rt = _collect_key_response(event, self.choices, start_time, core)
                     if response_value is not None:
-                        out["response"] = response_value
+                        out["response_value"] = response_value
                         out["rt"] = rt
 
                 if response_value is not None and self.end_on_response:
                     break
 
-            out["response"] = response_value
+            out["response_value"] = response_value
             out["rt"] = rt
             if self.on_finish is not None:
                 _require_context(ctx, "on_finish")
                 _call_row_hook(self.on_finish, ctx, out)
         except TrialInterrupted as err:
-            out["response"] = response_value
+            out["response_value"] = response_value
             out["rt"] = rt
-            out["trial_status"] = "interrupted"
-            out["interruption"] = err.reason
+            out["status"] = "interrupted"
             out.update(err.data)
             err.row = dict(out)
             raise
@@ -324,15 +323,15 @@ def _make_screen_row(
     row: Optional[Dict[str, Any]],
     screen_data: Dict[str, Any],
     screen_index: int,
+    response: Optional[str],
 ) -> Dict[str, Any]:
     """Create the mutable row shared by all screen lifecycle hooks."""
     out = dict(row or {})
     out.update(screen_data)
     out.setdefault("screen_index", int(screen_index))
-    out["response"] = None
+    out["response_type"] = "none" if response is None else str(response)
+    out["response_value"] = None
     out["rt"] = None
-    out.setdefault("markers", [])
-    out.setdefault("messages", [])
     return out
 
 
