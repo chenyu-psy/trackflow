@@ -1,4 +1,4 @@
-"""Realtime gaze monitoring and rejection recovery helpers."""
+"""Realtime gaze monitoring helpers."""
 
 from __future__ import annotations
 
@@ -6,9 +6,6 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional, Sequence, Tuple
 
 from .runtime import (
-    DEFAULT_REJECTION_PROMPT,
-    REJECTION_ALERT_BG,
-    _draw_text_page,
     _has_gaze_xy,
     _load_psychopy_module,
     _should_use_dark_text,
@@ -43,7 +40,7 @@ class GazeBreakError(Exception):
 
 
 class GazeMonitor:
-    """Realtime gaze monitoring and rejection recovery helper.
+    """Realtime gaze monitoring helper.
 
     The monitor checks gaze against a fixation radius but does not decide
     whether a trial should be retried, excluded, or saved. Those decisions
@@ -59,8 +56,6 @@ class GazeMonitor:
         pix_radius: Optional[float] = None,
         fixation: Any = None,
         enabled: bool = True,
-        drift_after: Optional[int] = None,
-        pause_after: Optional[int] = None,
         time_func: Optional[Callable[[], float]] = None,
         sleep_func: Optional[Callable[[float], None]] = None,
     ):
@@ -85,12 +80,6 @@ class GazeMonitor:
             Optional fixation stimulus with ``draw`` or ``set_color`` methods.
         enabled : bool, optional
             Whether gaze monitoring can run.
-        drift_after : int | None, optional
-            Consecutive rejection count that triggers drift correction.
-            Defaults to ``tracker.cfg.drift_after`` when available.
-        pause_after : int | None, optional
-            Consecutive rejection count above which a researcher recovery page
-            is shown. Defaults to ``tracker.cfg.pause_after`` when available.
         time_func : callable | None, optional
             Test hook returning current time in seconds.
         sleep_func : callable | None, optional
@@ -99,10 +88,6 @@ class GazeMonitor:
         tracker_cfg = getattr(tracker, "cfg", None)
         if max_dist_deg is None:
             max_dist_deg = getattr(tracker_cfg, "max_dist_deg", 1.25)
-        if drift_after is None:
-            drift_after = getattr(tracker_cfg, "drift_after", 3)
-        if pause_after is None:
-            pause_after = getattr(tracker_cfg, "pause_after", 5)
 
         self.tracker = tracker
         self.win = win
@@ -112,12 +97,9 @@ class GazeMonitor:
         self.fixation = fixation
         self.enabled = bool(enabled)
         self.active = False
-        self.drift_after = int(drift_after)
-        self.pause_after = int(pause_after)
         self.time_func = time_func
         self.sleep_func = sleep_func
         self.rejection_streak = 0
-        self.drift_done_for_streak = False
         self.last_error: Optional[GazeBreakError] = None
 
     def _deg_to_pix(self, value: float) -> float:
@@ -175,8 +157,8 @@ class GazeMonitor:
         core = _load_psychopy_module("core")
         core.wait(float(duration))
 
-    def start(self) -> None:
-        """Start realtime gaze monitoring.
+    def start_tracking(self) -> None:
+        """Start realtime fixation tracking.
 
         Returns
         -------
@@ -186,8 +168,8 @@ class GazeMonitor:
         """
         self.active = self.enabled and self.tracker is not None
 
-    def stop(self) -> None:
-        """Stop realtime gaze monitoring.
+    def stop_tracking(self) -> None:
+        """Stop realtime fixation tracking.
 
         Returns
         -------
@@ -196,7 +178,7 @@ class GazeMonitor:
         """
         self.active = False
 
-    def check(self) -> bool:
+    def check_fixation(self) -> bool:
         """Check the newest gaze sample against the fixation radius.
 
         Returns
@@ -265,7 +247,7 @@ class GazeMonitor:
             return False
         start_time = self._time()
         while self._time() < start_time + float(duration):
-            self.check()
+            self.check_fixation()
             self._sleep(sample_interval)
         return False
 
@@ -293,9 +275,7 @@ class GazeMonitor:
             return
         tracker_cfg = getattr(self.tracker, "cfg", None)
         bg_color = getattr(tracker_cfg, "bg_color", getattr(self.win, "color", "#FFFFFF"))
-        text_color = getattr(tracker_cfg, "text_color", None)
-        if text_color is None:
-            text_color = "#000000" if _should_use_dark_text(bg_color) else "#FFFFFF"
+        text_color = "#000000" if _should_use_dark_text(bg_color) else "#FFFFFF"
         visual = _load_psychopy_module("visual")
         visual.Rect(self.win, units="norm", width=2, height=2, fillColor=bg_color, colorSpace="hex").draw()
         visual.TextStim(
@@ -325,54 +305,13 @@ class GazeMonitor:
         self.win.flip()
         _wait_for_continue(self.win, continue_keys)
 
-    def handle_rejection(
-        self,
-        continue_keys: Sequence[str] = ("c", "d", "s"),
-    ) -> str:
-        """Run rejection recovery when the rejection streak reaches thresholds.
-
-        Parameters
-        ----------
-        continue_keys : sequence[str], optional
-            Responses accepted on the researcher recovery screen. Defaults use
-            ``c`` for calibration, ``d`` for drift correction, and ``s`` to
-            skip recovery.
-
-        Returns
-        -------
-        str
-            ``"none"``, ``"drift_correction"``, ``"calibration"``, or
-            ``"skip"`` describing the action taken.
-        """
-        if self.rejection_streak <= 0:
-            return "none"
-        if self.rejection_streak >= self.drift_after and not self.drift_done_for_streak:
-            self.drift_done_for_streak = True
-            self.tracker.run_drift_correction()
-            return "drift_correction"
-        if self.rejection_streak > self.pause_after:
-            _draw_text_page(self.win, DEFAULT_REJECTION_PROMPT, text_color="#FFFFFF", bg_color=REJECTION_ALERT_BG)
-            choice = _wait_for_continue(self.win, continue_keys)
-            if choice == "c":
-                self.tracker.run_calibration(intro=False, transition=True)
-                self.reset_rejections()
-                return "calibration"
-            if choice == "d":
-                self.tracker.run_drift_correction()
-                self.reset_rejections()
-                return "drift_correction"
-            self.reset_rejections()
-            return "skip"
-        return "none"
-
     def reset_rejections(self) -> None:
         """Reset consecutive gaze rejection state.
 
         Returns
         -------
         None
-            Clears the rejection streak, drift flag, and most recent error.
+            Clears the rejection streak and most recent error.
         """
         self.rejection_streak = 0
-        self.drift_done_for_streak = False
         self.last_error = None

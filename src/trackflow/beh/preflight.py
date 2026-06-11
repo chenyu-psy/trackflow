@@ -13,6 +13,9 @@ from typing import Any, List, Optional
 from . import _psychopy
 
 
+__all__ = ["PreflightResult", "check_preflight", "preflight_or_raise"]
+
+
 @dataclass
 class PreflightResult:
     """Result from checking enabled runtime subsystems.
@@ -45,7 +48,7 @@ def check_preflight(
     *,
     require_psychopy: bool = True,
     eeg: Optional[Any] = None,
-    gaze: Optional[Any] = None,
+    tracker: Optional[Any] = None,
 ) -> PreflightResult:
     """Check enabled behavior, EEG, and eye-tracking runtime pieces.
 
@@ -55,7 +58,7 @@ def check_preflight(
         Whether to check that core PsychoPy behavior modules import.
     eeg : object, optional
         Enabled EEG sender. When omitted, EEG is not checked.
-    gaze : object, optional
+    tracker : object, optional
         Enabled eye-tracker wrapper. When omitted, eye tracking is not checked.
 
     Returns
@@ -68,8 +71,8 @@ def check_preflight(
         issues.extend(_check_psychopy())
     if eeg is not None:
         issues.extend(_check_eeg_sender(eeg))
-    if gaze is not None:
-        issues.extend(_check_gaze_sender(gaze))
+    if tracker is not None:
+        issues.extend(_check_tracker(tracker))
     return PreflightResult(passed=not issues, issues=issues)
 
 
@@ -118,10 +121,10 @@ def _check_eeg_sender(eeg: Any) -> List[str]:
     return issues
 
 
-def _check_gaze_sender(gaze: Any) -> List[str]:
+def _check_tracker(tracker: Any) -> List[str]:
     """Return configuration issues for an enabled eye-tracker wrapper."""
-    has_send_msg = hasattr(gaze, "send_msg") and callable(gaze.send_msg)
-    has_send_message = hasattr(gaze, "send_message") and callable(gaze.send_message)
+    has_send_msg = hasattr(tracker, "send_msg") and callable(tracker.send_msg)
+    has_send_message = hasattr(tracker, "send_message") and callable(tracker.send_message)
     has_message_method = has_send_msg or has_send_message
     if has_message_method:
         return []

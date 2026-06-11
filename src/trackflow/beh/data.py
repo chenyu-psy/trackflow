@@ -1,8 +1,8 @@
-"""Data row helpers for behavior runtime output.
+"""Data collection helpers for behavior runtime output.
 
-The behavior runtime stores raw screen rows as JSON-compatible dictionaries.
-Optional trial-level summaries are written to CSV for researcher-facing
-analysis and inspection.
+The behavior runtime stores one flat JSON-compatible row per completed screen.
+Optional trial-level summaries are user-formatted rows derived from those
+screen rows.
 """
 
 from __future__ import annotations
@@ -13,8 +13,15 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 
-class DataRows:
+__all__ = ["DataCollection", "DataRows"]
+
+
+class DataCollection:
     """Small query view over completed behavior rows.
+
+    This intentionally mirrors the jsPsych idea that completed screen rows are
+    the primary in-memory data collection. It stays lightweight: advanced
+    analysis should use ``to_pandas()`` or ``to_list()``.
 
     Parameters
     ----------
@@ -24,12 +31,12 @@ class DataRows:
 
     Returns
     -------
-    DataRows
+    DataCollection
         Queryable row view.
 
     Examples
     --------
-    >>> rows = DataRows([{"trial_id": 1, "screen_name": "test"}])
+    >>> rows = DataCollection([{"trial_id": 1, "screen_name": "test"}])
     >>> rows.filter(trial_id=1).to_list()
     [{'trial_id': 1, 'screen_name': 'test'}]
     """
@@ -38,7 +45,7 @@ class DataRows:
         """Store copied rows for lightweight querying."""
         self._rows = [dict(row) for row in rows or []]
 
-    def filter(self, **fields: Any) -> "DataRows":
+    def filter(self, **fields: Any) -> "DataCollection":
         """Return rows whose fields match all requested values.
 
         Parameters
@@ -48,7 +55,7 @@ class DataRows:
 
         Returns
         -------
-        DataRows
+        DataCollection
             New view containing only matching rows.
         """
         matching_rows = []
@@ -60,7 +67,7 @@ class DataRows:
                     break
             if keep:
                 matching_rows.append(row)
-        return DataRows(matching_rows)
+        return DataCollection(matching_rows)
 
     def to_list(self) -> List[Dict[str, Any]]:
         """Return copied rows as a plain list of dictionaries.
@@ -82,6 +89,9 @@ class DataRows:
         """
         pd = _load_pandas()
         return pd.DataFrame(self.to_list())
+
+
+DataRows = DataCollection
 
 
 class SummaryWriter:

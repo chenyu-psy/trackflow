@@ -1,8 +1,9 @@
 """Trial planning helpers for behavior experiments.
 
-Planning helpers operate on plain dictionaries and return ``list[dict]`` rows
-that can be passed directly to ``Timeline.run(..., rows=...)``. They only use
-explicit user inputs and do not choose condition levels or trial counts.
+Planning helpers operate on plain dictionaries and return ``list[dict]``
+trial-data values that can be passed directly to
+``Timeline.run(..., trial_data=...)``. They only use explicit user inputs and
+do not choose condition levels or trial counts.
 """
 
 from __future__ import annotations
@@ -10,6 +11,14 @@ from __future__ import annotations
 import itertools
 import random
 from typing import Any, Dict, List, Optional, Sequence
+
+
+__all__ = [
+    "build_trial_rows",
+    "check_balance",
+    "factor_conditions",
+    "requeue_trials",
+]
 
 
 def factor_conditions(factors: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -62,7 +71,7 @@ def build_trial_rows(
     seed: Optional[int] = None,
     plan_prefix: str = "trial",
 ) -> List[Dict[str, Any]]:
-    """Build runtime-ready planned trial rows.
+    """Build runtime-ready trial-data dictionaries.
 
     Parameters
     ----------
@@ -86,7 +95,7 @@ def build_trial_rows(
     Returns
     -------
     list[dict]
-        Planned rows with ``plan_id``, ``session_id``, ``block_id``,
+        Trial-data dictionaries with ``plan_id``, ``session_id``, ``block_id``,
         ``trial_id``, and ``session_trial_id``.
     """
     _validate_build_inputs(conditions, repeats, session_size, block_size)
@@ -127,6 +136,64 @@ def check_balance(rows: Sequence[Dict[str, Any]], fields: Sequence[str]) -> Dict
         key = tuple(row.get(field) for field in field_list)
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def requeue_trials(
+    trial_queue: List[Dict[str, Any]],
+    retry_trial: Dict[str, Any],
+    min_delay: int = 0,
+    placement: str = "next",
+    rng: Optional[random.Random] = None,
+) -> None:
+    """Insert a retry trial into the remaining trial queue.
+
+    Parameters
+    ----------
+    trial_queue : list[dict]
+        Mutable queue of trial-data rows that have not run yet. The retry
+        trial is inserted into this list in place.
+    retry_trial : dict
+        Trial-data row to retry.
+    min_delay : int, optional
+        Minimum number of queued trials to leave before retrying when
+        ``placement="random"``. Defaults to 0.
+    placement : {"next", "random", "end"}, optional
+        Insertion strategy. ``"next"`` inserts at the front of the queue,
+        ``"random"`` chooses a legal position from ``min_delay`` through the
+        queue end, and ``"end"`` appends to the queue.
+    rng : random.Random, optional
+        Random generator used to choose a legal insertion point. When omitted,
+        the module-level random generator is used.
+
+    Returns
+    -------
+    None
+        Mutates ``trial_queue`` in place and does not return a value.
+    """
+    if not isinstance(trial_queue, list):
+        raise TypeError("trial_queue must be a mutable list.")
+    if not isinstance(retry_trial, dict):
+        raise TypeError("retry_trial must be a dictionary.")
+
+    retry_row = dict(retry_trial)
+    placement_name = str(placement).strip().lower()
+    if placement_name == "next":
+        trial_queue.insert(0, retry_row)
+        return
+    if placement_name == "end":
+        trial_queue.append(retry_row)
+        return
+    if placement_name != "random":
+        raise ValueError("placement must be 'next', 'random', or 'end'.")
+
+    if not trial_queue:
+        trial_queue.insert(0, retry_row)
+        return
+    delay = max(0, int(min_delay))
+    start_idx = min(delay, len(trial_queue))
+    chooser = rng if rng is not None else random
+    insert_idx = chooser.randint(start_idx, len(trial_queue))
+    trial_queue.insert(insert_idx, retry_row)
 
 
 def _validate_build_inputs(

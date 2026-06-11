@@ -1,27 +1,30 @@
 # trackflow
 
-`trackflow` provides small, explicit PsychoPy runtime helpers for psychology
-experiments that use behavior, eye tracking, EEG markers, and deployment-time
-vendoring.
+## What is trackflow?
 
-The package is designed for lab code that should remain readable to researchers.
-It helps with repeated runtime bookkeeping while keeping the experiment
-procedure in ordinary PsychoPy scripts.
+`trackflow` is a small set of PsychoPy-first helpers for psychology
+experiments. It helps with the repeated parts of experiment scripts while
+keeping the scientific procedure visible in ordinary Python code.
 
-## Current status
+Use it to:
 
-The current package version is `0.1.0`. It includes:
+- build reusable PsychoPy screens;
+- save behavior rows and trial summaries;
+- detect gaze breaks during selected screens;
+- send EEG markers and EyeLink messages from explicit hooks.
 
-- `trackflow.beh` for behavior screens, trial rows, raw JSONL output, summary
-  CSV output, recovery metadata, global researcher keys, and preflight checks
-- `trackflow.gaze` for EyeLink setup, wrappers, and gaze-break monitoring
-- `trackflow.eeg` for parallel-port marker sending and debug marker senders
-- `trackflow.sync` for explicit EEG and EyeLink sync records
+Full documentation is available at <https://chenyu-psy.github.io/trackflow/>.
 
-Project packaging, vendoring commands, and experiment scaffolding are planned
-for later milestones.
+## When should I use it?
 
-## Installation
+Use `trackflow` when you want a readable PsychoPy script but do not want to
+rewrite the same runtime bookkeeping for every experiment.
+
+`trackflow` does not replace PsychoPy, choose your trial design, assign
+conditions, decide retry or exclusion rules, or hide marker timing. Your
+experiment script still owns those decisions.
+
+## Install
 
 Install from GitHub with `pip`:
 
@@ -35,10 +38,11 @@ If your project uses `uv`, add it with:
 uv add "trackflow @ git+https://github.com/chenyu-psy/trackflow.git"
 ```
 
-## Basic use
+## First screen
 
-`trackflow` does not open windows or initialize hardware when imported.
-Experiment scripts still create and own the PsychoPy window and task flow.
+This example creates one fixation screen and saves one raw behavior row when
+the screen completes. The `raw_data_file` receives one JSONL row for the
+completed screen.
 
 ```python
 from psychopy import visual
@@ -47,21 +51,67 @@ from trackflow import beh
 
 
 win = visual.Window(size=(1024, 768), units="deg")
-fix = beh.make_fixation(win, size=0.5, color="#000000")
-screen = beh.make_screen(
-    stimuli=[fix],
-    duration=0.5,
-    response=None,
-    screen_name="fixation",
+timeline = beh.timeline.setup_timeline(
+    win=win,
+    raw_data_file="data/S01_screen_data.jsonl",
 )
 
-timeline = beh.setup_timeline(raw_data_file="data/S01_screen_data.jsonl")
-timeline.show_screen(win, screen)
+fix = beh.stimuli.make_fixation(win, size=0.5, color="#000000")
+screen = timeline.make_screen(
+    stimuli=[fix],
+    duration=0.5,
+    data={"screen_name": "fixation"},
+)
+
+timeline.run(screen)
 ```
 
-For complex trials, write normal PsychoPy code and return a
-`beh.TrialOutcome` so `trackflow` can handle common output and recovery
-bookkeeping.
+For planned trials, keep the plan in normal Python code and call
+`timeline.run(...)` inside your loop.
+
+## Eye tracking and EEG
+
+Eye tracking and EEG sends are explicit. The tracker is the eye-tracking
+runtime object passed to the timeline; the experiment script chooses marker
+codes, message text, send timing, monitored phases, and saved data fields.
+
+```python
+from trackflow import beh, eeg, gaze
+
+
+tracker = gaze.setup_tracker(
+    win=win,
+    cfg=gaze.GazeConfig(max_dist_deg=1.25),
+    edf_name="S01.edf",
+    monitor=monitor,
+    debug=True,
+)
+sender = eeg.setup_port(
+    debug=True,
+    code={"sample": 21},
+)
+
+timeline = beh.timeline.setup_timeline(
+    win=win,
+    tracker=tracker,
+    eeg=sender,
+)
+
+def mark_sample(ctx, data):
+    code = ctx.code["sample"]
+    ctx.send(code, message="sample")
+    data["EEG"] = code
+    data["ET_message"] = "sample"
+
+sample_screen = timeline.make_screen(
+    stimuli=[sample],
+    duration=0.5,
+    on_load=mark_sample,
+    data={"screen_name": "sample"},
+)
+
+timeline.run(sample_screen)
+```
 
 ## Development checks
 

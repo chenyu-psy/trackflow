@@ -63,10 +63,6 @@ body {
   color: var(--trackflow-blue);
 }
 
-.md-nav__item--section > .md-nav__link.md-nav__container {
-  display: none;
-}
-
 .md-main__inner {
   margin-top: 1.3rem;
 }

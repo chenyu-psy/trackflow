@@ -14,6 +14,16 @@ from typing import Any, List, Optional, Sequence, Tuple
 
 Point = Tuple[float, float]
 
+__all__ = [
+    "make_circle",
+    "make_fixation",
+    "make_image",
+    "make_line",
+    "make_rect",
+    "make_text",
+    "wrap_stimulus",
+]
+
 
 class Timing:
     """Screen-relative timing for one stimulus.
@@ -183,7 +193,7 @@ def wrap_stimulus(
     start: Optional[float] = None,
     end: Optional[float] = None,
     label: Optional[str] = None,
-) -> Stimulus:
+) -> Any:
     """Wrap a native PsychoPy or custom stimulus with timing.
 
     Parameters
@@ -199,8 +209,9 @@ def wrap_stimulus(
 
     Returns
     -------
-    Stimulus
-        Timed wrapper around ``drawable``.
+    object
+        Timed drawable wrapper that can be passed to
+        ``timeline.make_screen(...)``.
 
     Examples
     --------
@@ -337,6 +348,325 @@ def _color_kwargs(color: str) -> dict:
     if _is_hex_color(str(color)):
         kwargs["colorSpace"] = "hex"
     return kwargs
+
+
+def _line_color_kwargs(color: str) -> dict:
+    """Build PsychoPy color keyword arguments for line stimuli."""
+    kwargs = {"lineColor": str(color)}
+    if _is_hex_color(str(color)):
+        kwargs["colorSpace"] = "hex"
+    return kwargs
+
+
+def _merge_stim_kwargs(base: dict, stim_kwargs: dict) -> dict:
+    """Return constructor kwargs with explicit user passthrough values applied."""
+    kwargs = dict(base)
+    kwargs.update(stim_kwargs)
+    return kwargs
+
+
+def _text_stim_kwargs(text: Any, stim_kwargs: dict) -> dict:
+    """Return ``TextStim`` constructor kwargs with HEX color handling."""
+    kwargs = _merge_stim_kwargs({"text": str(text)}, stim_kwargs)
+    if "color" in kwargs and "colorSpace" not in kwargs and _is_hex_color(str(kwargs["color"])):
+        kwargs["colorSpace"] = "hex"
+    return kwargs
+
+
+def _set_color_space(drawable: Any, color: str) -> None:
+    """Update ``colorSpace`` when a mutable param changes a color."""
+    if _is_hex_color(str(color)):
+        setattr(drawable, "colorSpace", "hex")
+    elif hasattr(drawable, "colorSpace"):
+        setattr(drawable, "colorSpace", None)
+
+
+def _stim_label(label: Optional[str], default: str) -> str:
+    """Return an explicit label or the built-in type label."""
+    if label is None:
+        return default
+    return str(label)
+
+
+def _get_drawable_value(drawable: Any, name: str, default: Any = None) -> Any:
+    """Read a value from a PsychoPy-like object or its recorded kwargs."""
+    if hasattr(drawable, name):
+        return getattr(drawable, name)
+    kwargs = getattr(drawable, "kwargs", None)
+    if isinstance(kwargs, dict):
+        return kwargs.get(name, default)
+    return default
+
+
+class TextParams:
+    """Editable core parameters for a built-in text stimulus."""
+
+    def __init__(self, drawable: Any) -> None:
+        """Connect the parameter object to a PsychoPy ``TextStim``."""
+        self._drawable = drawable
+
+    @property
+    def text(self) -> str:
+        """Return the text string."""
+        return _get_drawable_value(self._drawable, "text")
+
+    @text.setter
+    def text(self, value: Any) -> None:
+        """Set the text string."""
+        setattr(self._drawable, "text", str(value))
+
+    @property
+    def pos(self) -> Any:
+        """Return the text position."""
+        return _get_drawable_value(self._drawable, "pos")
+
+    @pos.setter
+    def pos(self, value: Sequence[float]) -> None:
+        """Set the text position."""
+        setattr(self._drawable, "pos", _validate_pos(value))
+
+    @property
+    def color(self) -> Any:
+        """Return the text color."""
+        return _get_drawable_value(self._drawable, "color")
+
+    @color.setter
+    def color(self, value: str) -> None:
+        """Set the text color and matching color space."""
+        color = str(value)
+        setattr(self._drawable, "color", color)
+        _set_color_space(self._drawable, color)
+
+    @property
+    def height(self) -> Any:
+        """Return the text height."""
+        return _get_drawable_value(self._drawable, "height")
+
+    @height.setter
+    def height(self, value: float) -> None:
+        """Set the text height."""
+        setattr(self._drawable, "height", float(value))
+
+    @property
+    def units(self) -> Any:
+        """Return the text units."""
+        return _get_drawable_value(self._drawable, "units")
+
+    @units.setter
+    def units(self, value: str) -> None:
+        """Set the text units."""
+        setattr(self._drawable, "units", str(value))
+
+
+class ImageParams:
+    """Editable core parameters for a built-in image stimulus."""
+
+    def __init__(self, drawable: Any) -> None:
+        """Connect the parameter object to a PsychoPy ``ImageStim``."""
+        self._drawable = drawable
+
+    @property
+    def image(self) -> Any:
+        """Return the image source."""
+        return _get_drawable_value(self._drawable, "image")
+
+    @image.setter
+    def image(self, value: Any) -> None:
+        """Set the image source."""
+        setattr(self._drawable, "image", value)
+
+    @property
+    def pos(self) -> Any:
+        """Return the image position."""
+        return _get_drawable_value(self._drawable, "pos")
+
+    @pos.setter
+    def pos(self, value: Sequence[float]) -> None:
+        """Set the image position."""
+        setattr(self._drawable, "pos", _validate_pos(value))
+
+    @property
+    def size(self) -> Any:
+        """Return the image size."""
+        return _get_drawable_value(self._drawable, "size")
+
+    @size.setter
+    def size(self, value: Any) -> None:
+        """Set the image size."""
+        setattr(self._drawable, "size", value)
+
+    @property
+    def units(self) -> Any:
+        """Return the image units."""
+        return _get_drawable_value(self._drawable, "units")
+
+    @units.setter
+    def units(self, value: str) -> None:
+        """Set the image units."""
+        setattr(self._drawable, "units", str(value))
+
+
+class RectParams:
+    """Editable core parameters for a built-in rect stimulus."""
+
+    def __init__(self, drawable: Any) -> None:
+        """Connect the parameter object to a PsychoPy ``Rect``."""
+        self._drawable = drawable
+
+    @property
+    def width(self) -> float:
+        """Return the rect width."""
+        return _get_drawable_value(self._drawable, "width")
+
+    @width.setter
+    def width(self, value: float) -> None:
+        """Set the rect width."""
+        setattr(self._drawable, "width", _validate_size(value))
+
+    @property
+    def height(self) -> float:
+        """Return the rect height."""
+        return _get_drawable_value(self._drawable, "height")
+
+    @height.setter
+    def height(self, value: float) -> None:
+        """Set the rect height."""
+        setattr(self._drawable, "height", _validate_size(value))
+
+    @property
+    def pos(self) -> Any:
+        """Return the rect position."""
+        return _get_drawable_value(self._drawable, "pos")
+
+    @pos.setter
+    def pos(self, value: Sequence[float]) -> None:
+        """Set the rect position."""
+        setattr(self._drawable, "pos", _validate_pos(value))
+
+    @property
+    def color(self) -> Any:
+        """Return the rect fill color."""
+        return _get_drawable_value(self._drawable, "fillColor")
+
+    @color.setter
+    def color(self, value: str) -> None:
+        """Set rect fill and line color."""
+        color = str(value)
+        setattr(self._drawable, "fillColor", color)
+        setattr(self._drawable, "lineColor", color)
+        _set_color_space(self._drawable, color)
+
+    @property
+    def units(self) -> Any:
+        """Return the rect units."""
+        return _get_drawable_value(self._drawable, "units")
+
+    @units.setter
+    def units(self, value: str) -> None:
+        """Set the rect units."""
+        setattr(self._drawable, "units", str(value))
+
+
+class CircleParams:
+    """Editable core parameters for a built-in circle stimulus."""
+
+    def __init__(self, drawable: Any) -> None:
+        """Connect the parameter object to a PsychoPy ``Circle``."""
+        self._drawable = drawable
+
+    @property
+    def radius(self) -> float:
+        """Return the circle radius."""
+        return _get_drawable_value(self._drawable, "radius")
+
+    @radius.setter
+    def radius(self, value: float) -> None:
+        """Set the circle radius."""
+        radius = _validate_size(value)
+        setattr(self._drawable, "radius", radius)
+
+    @property
+    def pos(self) -> Any:
+        """Return the circle position."""
+        return _get_drawable_value(self._drawable, "pos")
+
+    @pos.setter
+    def pos(self, value: Sequence[float]) -> None:
+        """Set the circle position."""
+        setattr(self._drawable, "pos", _validate_pos(value))
+
+    @property
+    def color(self) -> Any:
+        """Return the circle fill color."""
+        return _get_drawable_value(self._drawable, "fillColor")
+
+    @color.setter
+    def color(self, value: str) -> None:
+        """Set circle fill and line color."""
+        color = str(value)
+        setattr(self._drawable, "fillColor", color)
+        setattr(self._drawable, "lineColor", color)
+        _set_color_space(self._drawable, color)
+
+    @property
+    def units(self) -> Any:
+        """Return the circle units."""
+        return _get_drawable_value(self._drawable, "units")
+
+    @units.setter
+    def units(self, value: str) -> None:
+        """Set the circle units."""
+        setattr(self._drawable, "units", str(value))
+
+
+class LineParams:
+    """Editable core parameters for a built-in line stimulus."""
+
+    def __init__(self, drawable: Any) -> None:
+        """Connect the parameter object to a PsychoPy ``Line``."""
+        self._drawable = drawable
+
+    @property
+    def start_pos(self) -> Any:
+        """Return the line start position."""
+        return _get_drawable_value(self._drawable, "start")
+
+    @start_pos.setter
+    def start_pos(self, value: Sequence[float]) -> None:
+        """Set the line start position."""
+        setattr(self._drawable, "start", _validate_pos(value))
+
+    @property
+    def end_pos(self) -> Any:
+        """Return the line end position."""
+        return _get_drawable_value(self._drawable, "end")
+
+    @end_pos.setter
+    def end_pos(self, value: Sequence[float]) -> None:
+        """Set the line end position."""
+        setattr(self._drawable, "end", _validate_pos(value))
+
+    @property
+    def color(self) -> Any:
+        """Return the line color."""
+        return _get_drawable_value(self._drawable, "lineColor")
+
+    @color.setter
+    def color(self, value: str) -> None:
+        """Set the line color and matching color space."""
+        color = str(value)
+        setattr(self._drawable, "lineColor", color)
+        _set_color_space(self._drawable, color)
+
+    @property
+    def units(self) -> Any:
+        """Return the line units."""
+        return _get_drawable_value(self._drawable, "units")
+
+    @units.setter
+    def units(self, value: str) -> None:
+        """Set the line units."""
+        setattr(self._drawable, "units", str(value))
 
 
 def _quadrant_vertices(outer_r: float, half_gap: float, sign_x: int, sign_y: int, edges: int) -> List[Point]:
@@ -620,6 +950,187 @@ class FixationStim:
         self._build_parts()
 
 
+def make_text(
+    win: Any,
+    text: Any,
+    *,
+    start: Optional[float] = None,
+    end: Optional[float] = None,
+    label: Optional[str] = None,
+    **stim_kwargs: Any,
+) -> Any:
+    """Create a timed PsychoPy ``TextStim`` wrapper.
+
+    Parameters
+    ----------
+    win : psychopy.visual.Window
+        PsychoPy window where the text will be drawn.
+    text : object
+        Text displayed by the stimulus.
+    start, end : float, optional
+        Screen-relative visibility timing.
+    label : str, optional
+        Optional researcher-facing label. Defaults to ``"text"``.
+    **stim_kwargs
+        Additional keyword arguments forwarded to
+        ``psychopy.visual.TextStim``.
+
+    Returns
+    -------
+    object
+        Timed drawable text wrapper for ``timeline.make_screen(...)``.
+    """
+    visual = _load_psychopy_visual()
+    kwargs = _text_stim_kwargs(text, stim_kwargs)
+    drawable = visual.TextStim(win, **kwargs)
+    return Stimulus(
+        drawable=drawable,
+        timing=Timing(start=start, end=end),
+        params=TextParams(drawable),
+        label=_stim_label(label, "text"),
+    )
+
+
+def make_image(
+    win: Any,
+    image: Any,
+    *,
+    start: Optional[float] = None,
+    end: Optional[float] = None,
+    label: Optional[str] = None,
+    **stim_kwargs: Any,
+) -> Any:
+    """Create a timed PsychoPy ``ImageStim`` wrapper.
+
+    Parameters
+    ----------
+    win : psychopy.visual.Window
+        PsychoPy window where the image will be drawn.
+    image : object
+        Image source forwarded to PsychoPy.
+    start, end : float, optional
+        Screen-relative visibility timing.
+    label : str, optional
+        Optional researcher-facing label. Defaults to ``"image"``.
+    **stim_kwargs
+        Additional keyword arguments forwarded to
+        ``psychopy.visual.ImageStim``.
+
+    Returns
+    -------
+    object
+        Timed drawable image wrapper for ``timeline.make_screen(...)``.
+    """
+    visual = _load_psychopy_visual()
+    kwargs = _merge_stim_kwargs({"image": image}, stim_kwargs)
+    drawable = visual.ImageStim(win, **kwargs)
+    return Stimulus(
+        drawable=drawable,
+        timing=Timing(start=start, end=end),
+        params=ImageParams(drawable),
+        label=_stim_label(label, "image"),
+    )
+
+
+def make_rect(
+    win: Any,
+    width: float = 0.5,
+    height: float = 0.5,
+    *,
+    pos: Sequence[float] = (0.0, 0.0),
+    color: str = "#000000",
+    units: str = "deg",
+    start: Optional[float] = None,
+    end: Optional[float] = None,
+    label: Optional[str] = None,
+    **stim_kwargs: Any,
+) -> Any:
+    """Create a timed PsychoPy ``Rect`` wrapper."""
+    visual = _load_psychopy_visual()
+    kwargs = _merge_stim_kwargs(
+        {
+            "width": _validate_size(width),
+            "height": _validate_size(height),
+            "pos": _validate_pos(pos),
+            "units": str(units),
+            **_color_kwargs(color),
+        },
+        stim_kwargs,
+    )
+    drawable = visual.Rect(win, **kwargs)
+    return Stimulus(
+        drawable=drawable,
+        timing=Timing(start=start, end=end),
+        params=RectParams(drawable),
+        label=_stim_label(label, "rect"),
+    )
+
+
+def make_circle(
+    win: Any,
+    radius: float = 0.25,
+    *,
+    pos: Sequence[float] = (0.0, 0.0),
+    color: str = "#000000",
+    units: str = "deg",
+    start: Optional[float] = None,
+    end: Optional[float] = None,
+    label: Optional[str] = None,
+    **stim_kwargs: Any,
+) -> Any:
+    """Create a timed PsychoPy ``Circle`` wrapper."""
+    visual = _load_psychopy_visual()
+    validated_radius = _validate_size(radius)
+    kwargs = _merge_stim_kwargs(
+        {
+            "radius": validated_radius,
+            "pos": _validate_pos(pos),
+            "units": str(units),
+            **_color_kwargs(color),
+        },
+        stim_kwargs,
+    )
+    drawable = visual.Circle(win, **kwargs)
+    return Stimulus(
+        drawable=drawable,
+        timing=Timing(start=start, end=end),
+        params=CircleParams(drawable),
+        label=_stim_label(label, "circle"),
+    )
+
+
+def make_line(
+    win: Any,
+    start_pos: Sequence[float],
+    end_pos: Sequence[float],
+    *,
+    color: str = "#000000",
+    units: str = "deg",
+    start: Optional[float] = None,
+    end: Optional[float] = None,
+    label: Optional[str] = None,
+    **stim_kwargs: Any,
+) -> Any:
+    """Create a timed PsychoPy ``Line`` wrapper."""
+    visual = _load_psychopy_visual()
+    kwargs = _merge_stim_kwargs(
+        {
+            "start": _validate_pos(start_pos),
+            "end": _validate_pos(end_pos),
+            "units": str(units),
+            **_line_color_kwargs(color),
+        },
+        stim_kwargs,
+    )
+    drawable = visual.Line(win, **kwargs)
+    return Stimulus(
+        drawable=drawable,
+        timing=Timing(start=start, end=end),
+        params=LineParams(drawable),
+        label=_stim_label(label, "line"),
+    )
+
+
 def make_fixation(
     win: Any,
     size: float = 0.5,
@@ -629,7 +1140,7 @@ def make_fixation(
     start: Optional[float] = None,
     end: Optional[float] = None,
     label: Optional[str] = None,
-) -> Stimulus:
+) -> Any:
     """Create a timed fixed-ratio fixation stimulus.
 
     Parameters
@@ -656,15 +1167,13 @@ def make_fixation(
 
     Returns
     -------
-    Stimulus
-        Timed wrapper around a ``FixationStim``. The drawing object is stored
-        as ``stim.drawable`` and editable settings are exposed through
-        ``stim.params``.
+    object
+        Timed drawable fixation wrapper that can be passed to
+        ``timeline.make_screen(...)``.
 
     Examples
     --------
     >>> fix = make_fixation(win, size=0.5, color="#FFFFFF", start=0, end=0.5)
-    >>> fix.params.size = 0.6
     >>> fix.draw()
     """
     fixation = FixationStim(

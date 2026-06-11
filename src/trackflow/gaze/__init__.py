@@ -7,7 +7,7 @@ is called, so importing `trackflow.gaze` does not require an EyeLink runtime.
 """
 
 from .config import GazeConfig, _make_tracking_settings
-from .monitor import GazeBreakError, GazeMonitor
+from .monitor import GazeBreakError
 from .runtime import MOUSE_TOKENS, _split_continue_keys
 from .tracker import ConnectedEyeLinker, DebugEyeLinker, setup_tracker
 
@@ -16,10 +16,8 @@ __all__ = [
     "DebugEyeLinker",
     "GazeBreakError",
     "GazeConfig",
-    "GazeMonitor",
     "MOUSE_TOKENS",
     "_make_tracking_settings",
     "_split_continue_keys",
     "setup_tracker",
 ]
-

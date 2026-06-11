@@ -116,12 +116,13 @@ class FakeVisual:
 
 
 class GazeTests(unittest.TestCase):
-    """Check import, sample monitoring, and rejection recovery behavior."""
+    """Check import, sample monitoring, and gaze feedback behavior."""
 
     def test_import_exposes_gaze_module(self):
         """The package should expose the gaze module at import time."""
-        self.assertTrue(hasattr(gaze, "GazeMonitor"))
         self.assertTrue(hasattr(gaze, "GazeConfig"))
+        self.assertTrue(hasattr(gaze, "GazeBreakError"))
+        self.assertTrue(hasattr(gaze, "setup_tracker"))
 
     def test_gaze_config_defaults_match_discussed_api(self):
         """GazeConfig should contain gaze settings but no session switches."""
@@ -131,8 +132,6 @@ class GazeTests(unittest.TestCase):
         self.assertEqual(cfg.calibration_area, (0.5, 0.5))
         self.assertEqual(cfg.max_dist_deg, 1.25)
         self.assertEqual(cfg.bg_color, "#7F7F7F")
-        self.assertEqual(cfg.drift_after, 3)
-        self.assertEqual(cfg.pause_after, 5)
         self.assertFalse(hasattr(cfg, "enabled"))
         self.assertFalse(hasattr(cfg, "edf_name"))
         self.assertFalse(hasattr(cfg, "debug"))
@@ -185,38 +184,38 @@ class GazeTests(unittest.TestCase):
     def test_check_accepts_gaze_inside_radius(self):
         """A centered gaze sample should not raise a gaze break."""
         tracker = FakeTracker(samples=[((52, 50), None)])
-        monitor = gaze.GazeMonitor(
+        monitor = gaze_monitor.GazeMonitor(
             tracker=tracker,
             win=FakeWindow(),
             pix_radius=10,
         )
-        monitor.start()
-        self.assertFalse(monitor.check())
+        monitor.start_tracking()
+        self.assertFalse(monitor.check_fixation())
         self.assertEqual(monitor.rejection_streak, 0)
 
     def test_check_ignores_empty_eye_tuples(self):
         """Missing x/y values should be treated as no usable gaze sample."""
         tracker = FakeTracker(samples=[((None, None), (None, None))])
-        monitor = gaze.GazeMonitor(
+        monitor = gaze_monitor.GazeMonitor(
             tracker=tracker,
             win=FakeWindow(),
             pix_radius=10,
         )
-        monitor.start()
-        self.assertFalse(monitor.check())
+        monitor.start_tracking()
+        self.assertFalse(monitor.check_fixation())
         self.assertEqual(monitor.rejection_streak, 0)
 
     def test_check_raises_for_gaze_outside_radius(self):
         """A far gaze sample should raise and update rejection state."""
         tracker = FakeTracker(samples=[((80, 50), None)])
-        monitor = gaze.GazeMonitor(
+        monitor = gaze_monitor.GazeMonitor(
             tracker=tracker,
             win=FakeWindow(),
             pix_radius=10,
         )
-        monitor.start()
+        monitor.start_tracking()
         with self.assertRaises(gaze.GazeBreakError) as err_ctx:
-            monitor.check()
+            monitor.check_fixation()
         self.assertEqual(err_ctx.exception.pos, (30.0, 0.0))
         self.assertEqual(monitor.rejection_streak, 1)
         self.assertEqual(tracker.stop_recording_calls, 1)
@@ -225,70 +224,40 @@ class GazeTests(unittest.TestCase):
         """wait should repeatedly check gaze while advancing through duration."""
         clock = FakeClock()
         tracker = FakeTracker(samples=[((50, 50), None)])
-        monitor = gaze.GazeMonitor(
+        monitor = gaze_monitor.GazeMonitor(
             tracker=tracker,
             win=FakeWindow(),
             pix_radius=10,
             time_func=clock.now,
             sleep_func=clock.sleep,
         )
-        monitor.start()
+        monitor.start_tracking()
         self.assertFalse(monitor.wait(0.03, sample_interval=0.01))
         self.assertGreaterEqual(clock.t, 0.03)
 
-    def test_handle_rejection_returns_none_before_threshold(self):
-        """handle_rejection should return text 'none' before recovery starts."""
-        tracker = FakeTracker(samples=[((80, 50), None)])
-        monitor = gaze.GazeMonitor(
-            tracker=tracker,
-            win=FakeWindow(),
-            pix_radius=10,
-        )
-        monitor.rejection_streak = 1
-        self.assertEqual(monitor.handle_rejection(), "none")
-
-    def test_handle_rejection_runs_drift_at_threshold(self):
-        """handle_rejection should run drift correction at the drift threshold."""
-        tracker = FakeTracker(samples=[((80, 50), None)])
-        monitor = gaze.GazeMonitor(
-            tracker=tracker,
-            win=FakeWindow(),
-            pix_radius=10,
-            drift_after=3,
-        )
-        monitor.rejection_streak = 3
-        self.assertEqual(monitor.handle_rejection(), "drift_correction")
-        self.assertEqual(tracker.run_drift_correction_calls, 1)
-
     def test_monitor_uses_tracker_config_defaults(self):
-        """GazeMonitor should use tracker cfg for threshold defaults."""
-        cfg = gaze.GazeConfig(max_dist_deg=2.0, drift_after=4, pause_after=6)
+        """GazeMonitor should use tracker cfg for gaze-radius defaults."""
+        cfg = gaze.GazeConfig(max_dist_deg=2.0)
         tracker = FakeTracker(samples=[((50, 50), None)], cfg=cfg)
-        monitor = gaze.GazeMonitor(
+        monitor = gaze_monitor.GazeMonitor(
             tracker=tracker,
             win=FakeWindow(),
             pix_radius=12,
         )
         self.assertEqual(monitor.max_dist_deg, 2.0)
-        self.assertEqual(monitor.drift_after, 4)
-        self.assertEqual(monitor.pause_after, 6)
         self.assertEqual(monitor.pix_radius, 12)
 
     def test_monitor_explicit_overrides_beat_config(self):
         """Explicit monitor arguments should override cfg defaults."""
-        cfg = gaze.GazeConfig(max_dist_deg=2.0, drift_after=4, pause_after=6)
+        cfg = gaze.GazeConfig(max_dist_deg=2.0)
         tracker = FakeTracker(samples=[((50, 50), None)], cfg=cfg)
-        monitor = gaze.GazeMonitor(
+        monitor = gaze_monitor.GazeMonitor(
             tracker=tracker,
             win=FakeWindow(),
             pix_radius=9,
             max_dist_deg=0.8,
-            drift_after=2,
-            pause_after=3,
         )
         self.assertEqual(monitor.max_dist_deg, 0.8)
-        self.assertEqual(monitor.drift_after, 2)
-        self.assertEqual(monitor.pause_after, 3)
 
     def test_debug_tracker_make_monitor_uses_saved_context(self):
         """make_monitor should use saved cfg, win, and monitor context."""
@@ -301,11 +270,28 @@ class GazeTests(unittest.TestCase):
         self.assertEqual(monitor.monitor, "mon")
         self.assertEqual(monitor.max_dist_deg, 1.7)
 
+    def test_debug_tracker_reuses_internal_monitor_for_fixation_helpers(self):
+        """Tracker fixation helpers should use one internally managed monitor."""
+        tracker = gaze.setup_tracker(FakeWindow(), cfg=gaze.GazeConfig(), edf_name="S01.edf", debug=True)
+        monitor = mock.Mock()
+        monitor.check_fixation.return_value = True
+
+        with mock.patch.object(tracker, "make_monitor", return_value=monitor) as make_monitor:
+            tracker.start_tracking()
+            result = tracker.check_fixation()
+            tracker.stop_tracking()
+
+        make_monitor.assert_called_once_with()
+        monitor.start_tracking.assert_called_once_with()
+        monitor.check_fixation.assert_called_once_with()
+        monitor.stop_tracking.assert_called_once_with()
+        self.assertTrue(result)
+
     def test_gaze_break_feedback_uses_neutral_text_and_red_marker(self):
         """Feedback should reserve red for the measured gaze marker."""
         cfg = gaze.GazeConfig(bg_color="#7F7F7F")
         tracker = FakeTracker(samples=[((80, 50), None)], cfg=cfg)
-        monitor = gaze.GazeMonitor(tracker=tracker, win=FakeWindow(), pix_radius=10)
+        monitor = gaze_monitor.GazeMonitor(tracker=tracker, win=FakeWindow(), pix_radius=10)
         monitor.last_error = gaze.GazeBreakError("break", x=30, y=0)
         FakeVisual.calls = []
         with mock.patch.object(gaze_monitor, "_load_psychopy_module", return_value=FakeVisual):
