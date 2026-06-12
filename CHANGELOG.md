@@ -18,6 +18,8 @@ The release workflow reads the section matching `project.version` in
   wxPython constraints for cleaner editable installs.
 - Refreshed the documentation homepage, learning articles, navigation, and
   compact API reference pages for the 0.3.0 scaffold workflow.
+- Added release-branch sync checks so `main` changes are surfaced back to
+  `develop` before the next release PR.
 
 ## 0.2.0
 
@@ -30,6 +32,20 @@ The release workflow reads the section matching `project.version` in
 - Added opt-in deployment settings overrides for literal settings blocks such
   as `RUNTIME` and `MONITOR`, applied only to copied settings files.
 - Removed the design-stage per-settings `PACKAGE` block workflow.
+
+## 0.1.1
+
+- Clarified timeline data storage around one flat raw row per completed screen,
+  matching the jsPsych-like `trial` to `Screen` model.
+- Simplified default behavior rows to stable runtime fields:
+  `screen_index`, `response_type`, `response_value`, and `rt`.
+- Removed historical default rejection, interruption, marker, and message
+  containers from saved rows; experiment-specific fields now stay explicit in
+  user data or hooks.
+- Updated behavior, gaze, EEG, and onboarding documentation for the current
+  runtime APIs.
+- Expanded tests for timeline row shape, response fields, interruption data,
+  and summary formatting behavior.
 
 ## 0.1.0
 
