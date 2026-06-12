@@ -11,6 +11,26 @@ on:
       - develop
 
 jobs:
+  branch-sync:
+    name: Main/develop sync guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'develop'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check main is already included in develop
+        run: |
+          git fetch origin main develop
+          if ! git merge-base --is-ancestor origin/main origin/develop; then
+            echo "origin/main has commits that are not in origin/develop."
+            echo "Sync main back into develop before opening a release PR."
+            exit 1
+          fi
+
   checks:
     name: Tests, lint, and docs
     runs-on: ubuntu-latest
