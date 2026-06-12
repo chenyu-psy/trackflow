@@ -1,9 +1,9 @@
 # API Reference
 
-The API reference is grouped by runtime responsibility.
+Compact reference pages for the public `trackflow` runtime APIs.
 
-- [Behavior](beh.md): stimuli, screens, trials, timelines, trial planning, and
-  data output
-- [Eye tracking](gaze/index.md): EyeLink configuration, setup, calibration, and gaze
-  monitoring
-- [EEG](eeg.md): EEG setup and marker sending
+| Module | Contents |
+| --- | --- |
+| [Behavior](beh.md) | Timelines, screens, stimuli, trial-data planning, and completed data views. |
+| [Eye tracking](gaze/index.md) | EyeLink setup, tracker lifecycle methods, fixation checks, and gaze errors. |
+| [EEG](eeg.md) | Parallel-port marker configuration and marker sender APIs. |

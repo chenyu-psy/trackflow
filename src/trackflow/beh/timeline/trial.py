@@ -46,14 +46,8 @@ class _Trial:
                     details=dict(err.data),
                 )
             screen_rows.append(screen_row)
-            if hasattr(ctx.timeline, "_run_pending_action_screens"):
-                screen_rows.extend(
-                    ctx.timeline._run_pending_action_screens(
-                        ctx,
-                        record=False,
-                        screen_index_start=len(screen_rows),
-                    )
-                )
+            if hasattr(ctx.timeline, "_pop_pending_system_rows"):
+                screen_rows.extend(ctx.timeline._pop_pending_system_rows())
 
         return TrialOutcome(
             status="accepted",

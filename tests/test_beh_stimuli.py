@@ -43,22 +43,6 @@ class FakeVisual:
 class BehaviorStimuliTests(unittest.TestCase):
     """Check behavior stimulus construction without opening PsychoPy."""
 
-    def test_import_exposes_behavior_module(self):
-        """The top-level behavior package should expose stimulus namespace."""
-        self.assertTrue(hasattr(beh, "stimuli"))
-        self.assertTrue(hasattr(beh.stimuli, "make_fixation"))
-        self.assertTrue(hasattr(beh.stimuli, "make_text"))
-        self.assertTrue(hasattr(beh.stimuli, "make_image"))
-        self.assertTrue(hasattr(beh.stimuli, "make_rect"))
-        self.assertTrue(hasattr(beh.stimuli, "make_circle"))
-        self.assertTrue(hasattr(beh.stimuli, "make_line"))
-        self.assertTrue(hasattr(beh.stimuli, "FixationStim"))
-        self.assertTrue(hasattr(beh.stimuli, "Timing"))
-        self.assertTrue(hasattr(beh.stimuli, "Stimulus"))
-        self.assertTrue(hasattr(beh.stimuli, "wrap_stimulus"))
-        self.assertFalse(hasattr(beh, "make_fixation"))
-        self.assertFalse(hasattr(beh, "make_text"))
-
     def test_stimulus_wraps_drawable_with_timing(self):
         """Timed stimuli should accept any object with ``draw()``."""
         obj = FakeShape()

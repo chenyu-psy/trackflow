@@ -29,33 +29,6 @@ class FakeCore:
         self.waits.append(float(duration))
 
 
-class FakeEegSender:
-    """EEG sender stand-in with optional failure."""
-
-    def __init__(self, fail=False):
-        """Store failure mode and initialize code log."""
-        self.fail = fail
-        self.sent = []
-
-    def send(self, code):
-        """Record a code or raise a scripted failure."""
-        if self.fail:
-            raise RuntimeError("port failed")
-        self.sent.append(int(code))
-
-
-class FakeGazeSender:
-    """EyeLink stand-in that records messages."""
-
-    def __init__(self):
-        """Initialize message log."""
-        self.messages = []
-
-    def send_msg(self, text):
-        """Record one EyeLink message."""
-        self.messages.append(str(text))
-
-
 class EegTests(unittest.TestCase):
     """Check parallel-port marker sender behavior without hardware."""
 

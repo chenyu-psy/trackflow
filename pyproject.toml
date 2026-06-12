@@ -4,17 +4,22 @@ build-backend = "hatchling.build"
 
 [project]
 name = "trackflow"
-version = "0.1.1"
+version = "0.3.0"
 description = "PsychoPy experiment framework helpers for development and deployment-time vendoring."
 readme = "README.md"
-requires-python = ">=3.8,<3.11"
+requires-python = ">=3.10,<3.11"
 authors = [
     { name = "Chenyu" }
 ]
 dependencies = [
     "pandas>=2.0.0",
+    "scipy>=1.14.1",
+    "wxPython>=4.2.5",
     "psychopy>=2024.1.1",
 ]
+
+[project.scripts]
+trackflow = "trackflow.cli:main"
 
 [dependency-groups]
 dev = [
