@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 jobs:
@@ -21,25 +21,38 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check whether develop already contains main
+      - name: Check whether develop already matches main
         id: sync_needed
         run: |
           git fetch origin main develop
-          if git merge-base --is-ancestor origin/main origin/develop; then
+          if git diff --quiet origin/develop origin/main; then
             echo "needed=false" >> "$GITHUB_OUTPUT"
           else
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Create sync branch from develop
+        if: steps.sync_needed.outputs.needed == 'true'
+        env:
+          SYNC_BRANCH: automation/sync-main-to-develop
+        run: |
+          git switch --create "$SYNC_BRANCH" origin/develop
+          git diff --binary origin/develop origin/main | git apply --index
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Sync main back to develop"
+          git push --force-with-lease origin "$SYNC_BRANCH"
 
       - name: Check for existing sync PR
         if: steps.sync_needed.outputs.needed == 'true'
         id: existing_pr
         env:
           GH_TOKEN: ${{ github.token }}
+          SYNC_BRANCH: automation/sync-main-to-develop
         run: |
           number="$(gh pr list \
             --base develop \
-            --head main \
+            --head "$SYNC_BRANCH" \
             --state open \
             --json number \
             --jq '.[0].number // ""')"
@@ -49,9 +62,10 @@ jobs:
         if: steps.sync_needed.outputs.needed == 'true' && steps.existing_pr.outputs.number == ''
         env:
           GH_TOKEN: ${{ github.token }}
+          SYNC_BRANCH: automation/sync-main-to-develop
         run: |
           gh pr create \
             --base develop \
-            --head main \
+            --head "$SYNC_BRANCH" \
             --title "Sync main back to develop" \
-            --body "Main has commits that are not yet in develop. Merge this PR before the next release branch so release PRs do not accumulate avoidable conflicts."
+            --body "Main has file changes that are not yet in develop. This PR is generated from develop with main's file diff applied, so it avoids conflicts caused only by squash-merge history."
