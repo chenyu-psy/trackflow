@@ -8,8 +8,10 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 from .. import _psychopy
 from ..data import DataCollection, SummaryWriter, append_jsonl
 from ..keys import (
-    GlobalKeyAction,
-    coerce_global_actions,
+    DEFAULT_QUIT_KEYS,
+    QUIT_REQUEST_NAME,
+    _KeyBinding,
+    build_request_bindings,
     fallback_key_map,
     find_response_key_conflicts,
     register_modified_shortcuts,
@@ -43,12 +45,14 @@ class Timeline:
         Stable runtime parameters and mutable runtime state.
     eeg, tracker : object, optional
         Configured EEG sender and EyeLink tracker used by ``ctx.send(...)``.
-    global_actions : sequence, optional
-        Researcher global-key actions. When omitted, default pause and quit
-        actions are enabled.
-    use_default_global_actions : bool, optional
-        Whether to create default pause/quit actions when ``global_actions`` is
-        omitted.
+    enable_quit_keys : bool, optional
+        Whether trackflow's locked quit keys are active.
+    quit_keys : sequence[str], optional
+        Researcher quit shortcuts. These always use the built-in quit
+        confirmation screen.
+    global_key_requests : mapping, optional
+        Deferred request shortcuts as ``state_name -> key list``. Pressing a
+        request key sets ``timeline.state[state_name] = True``.
 
     Examples
     --------
@@ -69,8 +73,9 @@ class Timeline:
         state: Optional[Dict[str, Any]] = None,
         eeg: Optional[Any] = None,
         tracker: Optional[Any] = None,
-        global_actions: Optional[Sequence[Any]] = None,
-        use_default_global_actions: bool = True,
+        enable_quit_keys: bool = True,
+        quit_keys: Optional[Sequence[str]] = None,
+        global_key_requests: Optional[Dict[str, Sequence[str]]] = None,
     ) -> None:
         """Create a timeline with optional file outputs."""
         self.win = win
@@ -84,13 +89,18 @@ class Timeline:
         self.state = dict(state or {})
         self.eeg = eeg
         self.tracker = tracker
-        self.global_actions = coerce_global_actions(global_actions, use_defaults=use_default_global_actions)
-        if global_actions is None and use_default_global_actions:
-            _attach_default_quit_screen(self.global_actions)
-        self._global_action_by_name = {action.name: action for action in self.global_actions}
-        self._fallback_actions = fallback_key_map(self.global_actions)
+        self.enable_quit_keys = bool(enable_quit_keys)
+        self._quit_binding = (
+            _KeyBinding(QUIT_REQUEST_NAME, list(quit_keys or DEFAULT_QUIT_KEYS))
+            if self.enable_quit_keys
+            else None
+        )
+        self._request_bindings = build_request_bindings(global_key_requests)
+        self._global_bindings = self._build_global_bindings()
+        self._request_names = {binding.name for binding in self._request_bindings}
+        self._fallback_actions = fallback_key_map(self._global_bindings)
         self._modified_shortcuts_registered = False
-        self._pending_action_screens: List[Screen] = []
+        self._pending_system_rows: List[Dict[str, Any]] = []
         self._summary_writer = SummaryWriter(self.summary_file) if self.summary_file is not None else None
 
     def make_screen(
@@ -459,22 +469,22 @@ class Timeline:
         raise ValueError("unit must be 'screen', 'trial', 'block', or 'session'.")
 
     def handle_global_keys(self, ctx: RunContext, data: Dict[str, Any], event: Any) -> bool:
-        """Apply a queued or polled researcher global-key action."""
-        action = self._pop_queued_global_action()
-        if action is None:
-            action = self._poll_fallback_action(event)
-        if action is None:
+        """Apply a queued or polled researcher global-key binding."""
+        action_name = self._pop_queued_global_action()
+        if action_name is None:
+            action_name = self._poll_fallback_action(event)
+        if action_name is None:
             return False
 
-        for key, value in action.set_state.items():
-            self.state[key] = value
-        if action.action is not None:
-            action.action(ctx)
-        if action.screen is not None:
-            self._pending_action_screens.append(action.screen)
-        if action.record:
-            data["global_key_action"] = action.name
-        return bool(action.end_screen)
+        data["global_key_action"] = action_name
+        if action_name == QUIT_REQUEST_NAME:
+            self.state[QUIT_REQUEST_NAME] = True
+            self._pending_system_rows.append(self._run_quit_confirmation(ctx))
+            return True
+        if action_name in self._request_names:
+            self.state[action_name] = True
+            return False
+        return False
 
     def _prepare_screen_run(self, screen: Screen) -> None:
         """Validate response-key conflicts before one screen runs."""
@@ -483,21 +493,24 @@ class Timeline:
     def register_global_keys(self, event: Any) -> None:
         """Register modified shortcuts once for the current PsychoPy event module."""
         if not self._modified_shortcuts_registered:
-            register_modified_shortcuts(event, self.global_actions, self._queue_global_action)
+            register_modified_shortcuts(event, self._global_bindings, self._queue_global_action)
             self._modified_shortcuts_registered = True
 
     def _queue_global_action(self, action_name: str) -> None:
         """Queue one action from a PsychoPy globalKeys callback."""
         self.state["_tf_global_key_action"] = str(action_name)
 
-    def _pop_queued_global_action(self) -> Optional[GlobalKeyAction]:
-        """Return and clear the action queued by a modified shortcut."""
+    def _pop_queued_global_action(self) -> Optional[str]:
+        """Return and clear the action name queued by a modified shortcut."""
         action_name = self.state.pop("_tf_global_key_action", None)
         if action_name is None:
             return None
-        return self._global_action_by_name.get(str(action_name))
+        action_name = str(action_name)
+        if action_name == QUIT_REQUEST_NAME or action_name in self._request_names:
+            return action_name
+        return None
 
-    def _poll_fallback_action(self, event: Any) -> Optional[GlobalKeyAction]:
+    def _poll_fallback_action(self, event: Any) -> Optional[str]:
         """Poll unmodified function-key fallback actions."""
         if not self._fallback_actions:
             return None
@@ -511,7 +524,7 @@ class Timeline:
         """Raise when participant responses overlap researcher fallback keys."""
         if screen.response != "key":
             return
-        conflicts = find_response_key_conflicts(screen.choices, self.global_actions)
+        conflicts = find_response_key_conflicts(screen.choices, self._global_bindings)
         if not conflicts:
             return
         raise ValueError(
@@ -519,36 +532,6 @@ class Timeline:
             + ", ".join(conflicts)
             + ". Use different participant choices or disable default global actions."
         )
-
-    def _run_pending_action_screens(
-        self,
-        ctx: RunContext,
-        record: bool = False,
-        screen_index_start: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
-        """Run screens requested by global-key actions."""
-        rows = []
-        while self._pending_action_screens:
-            screen = self._pending_action_screens.pop(0)
-            screen_ctx = RunContext(
-                win=ctx.win,
-                timeline=self,
-                trial_data=dict(ctx.trial_data),
-                params=self.params,
-                state=self.state,
-                tracker=TrackerRuntime(self.tracker),
-                screen=screen,
-            )
-            self._prepare_screen_run(screen)
-            if screen_index_start is None:
-                screen_index = len(self.records)
-            else:
-                screen_index = screen_index_start + len(rows)
-            row = screen.run(ctx.win, screen_index=screen_index, row=screen_ctx.trial_data, ctx=screen_ctx)
-            if record:
-                self._record_screen_row(row)
-            rows.append(row)
-        return rows
 
     def _run_feedback_screen(self, ctx: RunContext, screen: Screen) -> Dict[str, Any]:
         """Run one immediate feedback screen without recording it as trial data."""
@@ -563,6 +546,24 @@ class Timeline:
         )
         self._prepare_screen_run(screen)
         return screen.run(ctx.win, screen_index=0, row=screen_ctx.trial_data, ctx=screen_ctx)
+
+    def _run_quit_confirmation(self, ctx: RunContext) -> Dict[str, Any]:
+        """Run the built-in quit confirmation screen."""
+        return self._run_feedback_screen(ctx, _make_quit_confirmation_screen())
+
+    def _pop_pending_system_rows(self) -> List[Dict[str, Any]]:
+        """Return and clear rows produced by built-in system key flows."""
+        rows = [dict(row) for row in self._pending_system_rows]
+        self._pending_system_rows = []
+        return rows
+
+    def _build_global_bindings(self) -> List[_KeyBinding]:
+        """Return quit and request bindings in polling/registration order."""
+        bindings: List[_KeyBinding] = []
+        if self._quit_binding is not None:
+            bindings.append(self._quit_binding)
+        bindings.extend(self._request_bindings)
+        return bindings
 
     def _run_one_trial(self, unit: Any, trial_data: Dict[str, Any]) -> TrialOutcome:
         """Run a trial-like unit and normalize its outcome."""
@@ -696,14 +697,6 @@ def _normalize_outcome_status(status: Any) -> str:
     if status_text in {"accepted", "rejected", "interrupted"}:
         return status_text
     return status_text or "accepted"
-
-
-def _attach_default_quit_screen(actions: Sequence[GlobalKeyAction]) -> None:
-    """Attach the default Y/N quit confirmation screen to the quit action."""
-    for action in actions:
-        if action.name == "quit_requested":
-            action.screen = _make_quit_confirmation_screen()
-            return
 
 
 def _make_quit_confirmation_screen() -> Screen:
@@ -893,8 +886,6 @@ class _LazyTextStim:
 
 def _close_window_and_quit(win: Any) -> None:
     """Close the PsychoPy window and quit after confirmed researcher exit."""
-    if hasattr(win, "saveFrameIntervals") and callable(win.saveFrameIntervals):
-        win.saveFrameIntervals()
     if hasattr(win, "close") and callable(win.close):
         win.close()
     core = _psychopy.load_core()

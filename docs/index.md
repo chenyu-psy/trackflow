@@ -101,6 +101,7 @@ fields.
 
 <div class="trackflow-link-list">
   <a href="articles/psychopy-first/">PsychoPy-first runtime helpers</a>
+  <a href="articles/deployment-packaging/">Deployment packaging</a>
   <a href="api/beh/">Behavior API</a>
   <a href="api/gaze/">Eye tracking API</a>
   <a href="api/eeg/">EEG API</a>

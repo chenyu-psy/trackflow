@@ -35,6 +35,7 @@ nav:
   - Articles:
       - articles/index.md
       - PsychoPy-first runtime helpers: articles/psychopy-first.md
+      - Deployment packaging: articles/deployment-packaging.md
 
 markdown_extensions:
   - admonition
