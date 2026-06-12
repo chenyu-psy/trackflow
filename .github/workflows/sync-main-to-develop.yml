@@ -1,0 +1,71 @@
+name: Sync main back to develop
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Open sync PR when main advances
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check whether develop already matches main
+        id: sync_needed
+        run: |
+          git fetch origin main develop
+          if git diff --quiet origin/develop origin/main; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create sync branch from develop
+        if: steps.sync_needed.outputs.needed == 'true'
+        env:
+          SYNC_BRANCH: automation/sync-main-to-develop
+        run: |
+          git switch --create "$SYNC_BRANCH" origin/develop
+          git diff --binary origin/develop origin/main | git apply --index
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Sync main back to develop"
+          git push --force-with-lease origin "$SYNC_BRANCH"
+
+      - name: Check for existing sync PR
+        if: steps.sync_needed.outputs.needed == 'true'
+        id: existing_pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SYNC_BRANCH: automation/sync-main-to-develop
+        run: |
+          number="$(gh pr list \
+            --base develop \
+            --head "$SYNC_BRANCH" \
+            --state open \
+            --json number \
+            --jq '.[0].number // ""')"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Open sync PR
+        if: steps.sync_needed.outputs.needed == 'true' && steps.existing_pr.outputs.number == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SYNC_BRANCH: automation/sync-main-to-develop
+        run: |
+          gh pr create \
+            --base develop \
+            --head "$SYNC_BRANCH" \
+            --title "Sync main back to develop" \
+            --body "Main has file changes that are not yet in develop. This PR is generated from develop with main's file diff applied, so it avoids conflicts caused only by squash-merge history."
