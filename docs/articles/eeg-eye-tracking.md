@@ -167,5 +167,5 @@ but the experiment script should make the decisions visible.
 
 - Read [Use Screen Hook Functions](screen-hook-functions.md) for the hook
   timing model.
-- Use the [EEG API](../api/eeg.md) and [Eye tracking API](../api/gaze/index.md)
+- Use the [EEG API](../api/eeg.md) and [Eye tracking API](../api/gaze/reference.md)
   for exact setup arguments and tracker methods.

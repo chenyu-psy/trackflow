@@ -28,9 +28,7 @@ nav:
           - Stimuli: api/beh/stimuli.md
           - Trial planning: api/beh/design.md
           - Data output: api/beh/data.md
-      - Eye tracking:
-          - api/gaze/index.md
-          - API reference: api/gaze/reference.md
+      - Eye tracking: api/gaze/reference.md
       - EEG: api/eeg.md
   - Articles:
       - articles/index.md
@@ -54,16 +52,3 @@ markdown_extensions:
 
 plugins:
   - search
-  - mkdocstrings:
-      handlers:
-        python:
-          paths:
-            - src
-          options:
-            docstring_style: numpy
-            show_source: false
-            show_root_heading: true
-            show_root_full_path: false
-            members_order: source
-            filters:
-              - "!^_"

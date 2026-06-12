@@ -184,6 +184,6 @@ look up a function, class, or method.
   <a href="articles/screen-hook-functions/">Use screen hook functions</a>
   <a href="articles/timeline-data/">Understand timeline data</a>
   <a href="api/beh/timeline/">Behavior timeline API</a>
-  <a href="api/gaze/">Eye tracking API</a>
+  <a href="api/gaze/reference/">Eye tracking API</a>
   <a href="api/eeg/">EEG API</a>
 </div>

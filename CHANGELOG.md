@@ -4,6 +4,17 @@ Release notes are required before merging a release pull request into `main`.
 The release workflow reads the section matching `project.version` in
 `pyproject.toml`.
 
+## 0.3.1
+
+- Reworked API reference pages into compact, hand-authored sections with
+  cleaner task-based headings and right-side tables of contents.
+- Removed duplicated generated API headings and parameter tables from the
+  rendered documentation.
+- Simplified API overview pages into ordinary linked text lines.
+- Made Eye tracking match EEG's single-page API navigation style.
+- Removed unused mkdocstrings documentation tooling from the project
+  configuration.
+
 ## 0.3.0
 
 - Added `trackflow init` to create project folders, starter README content, and
