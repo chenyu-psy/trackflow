@@ -3,7 +3,9 @@
 Reference for `trackflow.beh.design`, which builds explicit dictionaries for
 `timeline.run(..., trial_data=row)`.
 
-## `factor_conditions(...)`
+## Condition expansion
+
+### `factor_conditions(...)`
 
 Expand explicit factor levels into condition dictionaries.
 
@@ -13,10 +15,6 @@ Expand explicit factor levels into condition dictionaries.
 | Return | `list[dict]`, one dictionary per factor-level combination. |
 | Constraint | This function expands values only; it does not choose condition levels or trial counts. |
 
-::: trackflow.beh.design.factor_conditions
-    options:
-      heading_level: 3
-
 ```python
 conditions = beh.design.factor_conditions({
     "condition": ["left", "right"],
@@ -24,7 +22,9 @@ conditions = beh.design.factor_conditions({
 })
 ```
 
-## `build_trial_rows(...)`
+## Trial row generation
+
+### `build_trial_rows(...)`
 
 Repeat and label condition dictionaries as runtime trial-data rows.
 
@@ -38,10 +38,6 @@ Repeat and label condition dictionaries as runtime trial-data rows.
 | `plan_prefix` | Prefix for generated `plan_id` values. |
 | Return | `list[dict]` with condition fields plus `plan_id`, `session_id`, `block_id`, `trial_id`, and `session_trial_id`. |
 
-::: trackflow.beh.design.build_trial_rows
-    options:
-      heading_level: 3
-
 ```python
 trial_rows = beh.design.build_trial_rows(
     conditions,
@@ -52,7 +48,9 @@ trial_rows = beh.design.build_trial_rows(
 )
 ```
 
-## `check_balance(...)`
+## Balance checks
+
+### `check_balance(...)`
 
 Count rows by selected fields.
 
@@ -62,15 +60,13 @@ Count rows by selected fields.
 | Return | Dictionary mapping field-value tuples to counts. |
 | Use | Inspect planned or condition rows before running a task. |
 
-::: trackflow.beh.design.check_balance
-    options:
-      heading_level: 3
-
 ```python
 counts = beh.design.check_balance(trial_rows, fields=["condition", "set_size"])
 ```
 
-## `requeue_trials(...)`
+## Retry queue
+
+### `requeue_trials(...)`
 
 Insert one retry row into an existing mutable trial queue.
 
@@ -82,10 +78,6 @@ Insert one retry row into an existing mutable trial queue.
 | `min_delay` | Minimum delay before a random retry placement. |
 | `rng` | Optional `random.Random` instance for reproducible random insertion. |
 | Return | `None`. |
-
-::: trackflow.beh.design.requeue_trials
-    options:
-      heading_level: 3
 
 ```python
 beh.design.requeue_trials(queue, failed_row, placement="end")

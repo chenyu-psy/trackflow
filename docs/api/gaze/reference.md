@@ -1,10 +1,12 @@
-# Eye Tracking API Reference
+# Eye Tracking API
 
 Reference for `trackflow.gaze`. Ordinary scripts should create trackers with
 `gaze.setup_tracker(...)`; the tracker classes document the returned method
 shape.
 
-## `GazeConfig`
+## Configuration
+
+### `GazeConfig`
 
 Configuration for EyeLink setup and realtime gaze monitoring.
 
@@ -17,10 +19,6 @@ Configuration for EyeLink setup and realtime gaze monitoring.
 | `bg_color` | HEX background color for gaze/calibration pages. |
 | `eyelink_settings` | Optional EyeLink command overrides. |
 
-::: trackflow.gaze.GazeConfig
-    options:
-      heading_level: 3
-
 ```python
 cfg = gaze.GazeConfig(
     tracked_eye="BOTH",
@@ -28,7 +26,9 @@ cfg = gaze.GazeConfig(
 )
 ```
 
-## `setup_tracker(...)`
+## Tracker setup
+
+### `setup_tracker(...)`
 
 Create and initialize a connected or debug tracker.
 
@@ -40,10 +40,6 @@ Create and initialize a connected or debug tracker.
 | `monitor` | Optional PsychoPy monitor used for degree-to-pixel conversion. |
 | `debug` | When `True`, return a debug tracker without importing or connecting to EyeLink. |
 | Return | `ConnectedEyeLinker` or `DebugEyeLinker`. Calibration is not run automatically. |
-
-::: trackflow.gaze.setup_tracker
-    options:
-      heading_level: 3
 
 ```python
 tracker = gaze.setup_tracker(
@@ -59,42 +55,59 @@ tracker = gaze.setup_tracker(
 
 Methods used before or between task trials.
 
-| Method | Description |
-| --- | --- |
-| `run_calibration(...)` | Apply optional per-call calibration settings and run calibration. |
-| `run_drift_correction(position=None, setup=1)` | Run EyeLink drift correction. |
+### `run_calibration(...)`
 
-::: trackflow.gaze.ConnectedEyeLinker
-    options:
-      show_root_heading: false
-      heading_level: 3
-      members:
-        - run_calibration
-        - run_drift_correction
+Apply optional per-call calibration settings and run calibration.
+
+| Argument | Description |
+| --- | --- |
+| `calibration_type` | Optional EyeLink calibration layout override. |
+| `calibration_area` | Optional width and height proportions used for this calibration call. |
+| Return | `None`. |
+
+### `run_drift_correction(...)`
+
+Run EyeLink drift correction.
+
+| Argument | Description |
+| --- | --- |
+| `position` | Optional screen position for drift correction. |
+| `setup` | EyeLink setup flag. Defaults to `1`. |
+| Return | `None`. |
 
 ```python
 tracker.run_calibration()
 tracker.run_drift_correction()
 ```
 
-## Recording and EDF lifecycle
+## Recording lifecycle
 
 Methods for recording and saving the EDF file.
 
-| Method | Description |
-| --- | --- |
-| `start_recording()` | Start EyeLink recording. |
-| `stop_recording()` | Stop EyeLink recording. |
-| `close(save_as=None)` | Finalize recording, close the connection, and transfer the EDF. |
+### `start_recording(...)`
 
-::: trackflow.gaze.ConnectedEyeLinker
-    options:
-      show_root_heading: false
-      heading_level: 3
-      members:
-        - start_recording
-        - stop_recording
-        - close
+Start EyeLink recording.
+
+| Return | Description |
+| --- | --- |
+| `None` | Recording starts on the configured tracker. |
+
+### `stop_recording(...)`
+
+Stop EyeLink recording.
+
+| Return | Description |
+| --- | --- |
+| `None` | Recording stops on the configured tracker. |
+
+### `close(...)`
+
+Finalize recording, close the connection, and transfer the EDF.
+
+| Argument | Description |
+| --- | --- |
+| `save_as` | Optional EDF filename for transfer. |
+| Return | `None`. |
 
 ```python
 tracker.start_recording()
@@ -106,22 +119,40 @@ tracker.close(save_as="S01.edf")
 
 Methods for phases where experiment code chooses to monitor fixation.
 
-| Method | Description |
-| --- | --- |
-| `start_tracking()` | Start the internal realtime gaze monitor. |
-| `stop_tracking()` | Stop the internal realtime gaze monitor. |
-| `check_fixation()` | Return `True` when fixation is valid; raise `GazeBreakError` on a measured break. |
-| `show_feedback(error=None, continue_keys=("space",))` | Show gaze-break feedback using the internal monitor. |
+### `start_tracking(...)`
 
-::: trackflow.gaze.ConnectedEyeLinker
-    options:
-      show_root_heading: false
-      heading_level: 3
-      members:
-        - start_tracking
-        - stop_tracking
-        - check_fixation
-        - show_feedback
+Start the internal realtime gaze monitor.
+
+| Return | Description |
+| --- | --- |
+| `None` | The realtime monitor begins sampling gaze. |
+
+### `stop_tracking(...)`
+
+Stop the internal realtime gaze monitor.
+
+| Return | Description |
+| --- | --- |
+| `None` | The realtime monitor stops sampling gaze. |
+
+### `check_fixation(...)`
+
+Return `True` when fixation is valid; raise `GazeBreakError` on a measured
+break.
+
+| Return | Description |
+| --- | --- |
+| `bool` | `True` when fixation is valid. |
+
+### `show_feedback(...)`
+
+Show gaze-break feedback using the internal monitor.
+
+| Argument | Description |
+| --- | --- |
+| `error` | Optional `GazeBreakError` used to draw feedback. |
+| `continue_keys` | Keys that allow the researcher or participant to continue. Defaults to `("space",)`. |
+| Return | `None`. |
 
 ```python
 tracker.start_tracking()
@@ -138,20 +169,32 @@ row fields remain experiment-script decisions.
 
 Methods for EyeLink host commands and EDF messages.
 
-| Method | Description |
-| --- | --- |
-| `send_msg(msg)` | Send a message to the EDF file. |
-| `send_status(status)` | Send a researcher-facing status line to the EyeLink host display. |
-| `send_command(cmd)` | Send a raw EyeLink host command. |
+### `send_msg(...)`
 
-::: trackflow.gaze.ConnectedEyeLinker
-    options:
-      show_root_heading: false
-      heading_level: 3
-      members:
-        - send_msg
-        - send_status
-        - send_command
+Send a message to the EDF file.
+
+| Argument | Description |
+| --- | --- |
+| `msg` | Message text written to the EDF file. |
+| Return | `None`. |
+
+### `send_status(...)`
+
+Send a researcher-facing status line to the EyeLink host display.
+
+| Argument | Description |
+| --- | --- |
+| `status` | Status text shown on the EyeLink host display. |
+| Return | `None`. |
+
+### `send_command(...)`
+
+Send a raw EyeLink host command.
+
+| Argument | Description |
+| --- | --- |
+| `cmd` | Raw EyeLink command text. |
+| Return | `None`. |
 
 ```python
 tracker.send_msg("sample_onset")
@@ -160,7 +203,9 @@ tracker.send_msg("sample_onset")
 Inside timeline hooks, prefer `ctx.send_gaze(...)` or
 `ctx.send(..., message=...)` when the tracker is attached to a timeline.
 
-## `GazeBreakError`
+## Gaze errors
+
+### `GazeBreakError`
 
 Exception raised by realtime fixation checks when gaze leaves the allowed
 radius.
@@ -170,10 +215,6 @@ radius.
 | `x`, `y` | Screen-centered gaze offset in pixels. |
 | `pos` | `(x, y)` tuple. |
 | `left`, `right` | Optional raw left/right gaze samples. |
-
-::: trackflow.gaze.GazeBreakError
-    options:
-      heading_level: 3
 
 ```python
 except gaze.GazeBreakError as err:

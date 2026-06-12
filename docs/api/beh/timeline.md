@@ -3,7 +3,9 @@
 Reference for `trackflow.beh.timeline`, the runtime namespace for timelines,
 screens, screen groups, completed rows, and device-send helpers.
 
-## `setup_timeline(...)`
+## Setup
+
+### `setup_timeline(...)`
 
 Create a `Timeline`.
 
@@ -19,10 +21,6 @@ Create a `Timeline`.
 | `global_key_requests` | Mapping from state names to researcher shortcut keys. |
 | Return | `Timeline`. |
 
-::: trackflow.beh.timeline.setup_timeline
-    options:
-      heading_level: 3
-
 ```python
 timeline = beh.timeline.setup_timeline(
     win=win,
@@ -30,7 +28,9 @@ timeline = beh.timeline.setup_timeline(
 )
 ```
 
-## `Timeline.make_screen(...)`
+## Screen creation
+
+### `make_screen(...)`
 
 Create one screen without running it.
 
@@ -47,10 +47,6 @@ Create one screen without running it.
 | `on_start`, `on_load`, `on_frame`, `on_finish` | Optional lifecycle hooks receiving `ctx`, row `data`, and for `on_frame`, `elapsed`. |
 | Return | `Screen`. |
 
-::: trackflow.beh.timeline.Timeline.make_screen
-    options:
-      heading_level: 3
-
 ```python
 screen = timeline.make_screen(
     stimuli=[fix],
@@ -59,7 +55,7 @@ screen = timeline.make_screen(
 )
 ```
 
-## `Timeline.make_text_screen(...)`
+### `make_text_screen(...)`
 
 Create a text instruction screen without running it.
 
@@ -71,10 +67,6 @@ Create a text instruction screen without running it.
 | Shared screen arguments | `duration`, `response`, `choices`, `response_start`, `end_on_response`, `clear_events`, `data`, and lifecycle hooks. |
 | Return | `Screen`. |
 
-::: trackflow.beh.timeline.Timeline.make_text_screen
-    options:
-      heading_level: 3
-
 ```python
 ready = timeline.make_text_screen(
     "Ready?",
@@ -83,7 +75,7 @@ ready = timeline.make_text_screen(
 )
 ```
 
-## `Timeline.make_image_screen(...)`
+### `make_image_screen(...)`
 
 Create an image instruction screen without running it.
 
@@ -96,10 +88,6 @@ Create an image instruction screen without running it.
 | Shared screen arguments | Same shared screen behavior arguments as `make_screen(...)`. |
 | Return | `Screen`. |
 
-::: trackflow.beh.timeline.Timeline.make_image_screen
-    options:
-      heading_level: 3
-
 ```python
 instruction = timeline.make_image_screen(
     "instruction.png",
@@ -108,7 +96,9 @@ instruction = timeline.make_image_screen(
 )
 ```
 
-## `Timeline.make_trial(...)`
+## Trial creation and running
+
+### `make_trial(...)`
 
 Create one ordered screen group without running it.
 
@@ -119,10 +109,6 @@ Create one ordered screen group without running it.
 | `run_if` | Optional predicate receiving `RunContext`; `False` skips the trial as a completed no-op. |
 | Return | Timeline-owned trial-like object for `timeline.run(...)`. |
 
-::: trackflow.beh.timeline.Timeline.make_trial
-    options:
-      heading_level: 3
-
 ```python
 trial = timeline.make_trial(
     screens=[fixation_screen, response_screen],
@@ -130,7 +116,7 @@ trial = timeline.make_trial(
 )
 ```
 
-## `Timeline.run(...)`
+### `run(...)`
 
 Run one screen or one trial-like object.
 
@@ -142,10 +128,6 @@ Run one screen or one trial-like object.
 | `return_status` | When `True`, return completion status; otherwise return `None`. |
 | Return | `None`, or `bool` when `return_status=True`. |
 
-::: trackflow.beh.timeline.Timeline.run
-    options:
-      heading_level: 3
-
 ```python
 timeline.run(trial, trial_data={"condition": "left"})
 complete = timeline.run(trial, trial_data=row, return_status=True)
@@ -155,19 +137,25 @@ complete = timeline.run(trial, trial_data=row, return_status=True)
 
 Read completed raw screen rows or summary rows.
 
-| Method | Description |
+### `get_data(...)`
+
+Return completed raw or summary rows matching exact field filters.
+
+| Argument | Description |
 | --- | --- |
-| `get_data(kind="raw", **filters)` | Return completed raw or summary rows matching exact field filters. |
-| `get_last_data(kind="raw", unit="screen")` | Return latest screen, trial, block, or session rows. |
+| `kind` | Data view to read, usually `"raw"` for screen rows or `"summary"` for trial summary rows. |
+| `**filters` | Exact field-value filters applied to completed rows. |
 | Return | `DataCollection`. |
 
-::: trackflow.beh.timeline.Timeline.get_data
-    options:
-      heading_level: 3
+### `get_last_data(...)`
 
-::: trackflow.beh.timeline.Timeline.get_last_data
-    options:
-      heading_level: 3
+Return the latest screen, trial, block, or session rows.
+
+| Argument | Description |
+| --- | --- |
+| `kind` | Data view to read, usually `"raw"` or `"summary"`. |
+| `unit` | Grouping level such as `"screen"`, `"trial"`, `"block"`, or `"session"`. |
+| Return | `DataCollection`. |
 
 ```python
 responses = timeline.get_data(kind="raw", screen_name="response").to_list()
@@ -178,24 +166,33 @@ latest_trial = timeline.get_last_data(kind="summary", unit="trial").to_list()
 
 Send configured EEG markers and EyeLink messages.
 
-| Method | Description |
+### `send(...)`
+
+Send one EEG marker, one EyeLink message, or both.
+
+| Argument | Description |
 | --- | --- |
-| `code` | Copy of the configured EEG code dictionary. |
-| `send(code=None, message=None)` | Send one EEG marker, one EyeLink message, or both. |
-| `send_eeg(code)` | Send one EEG marker. |
-| `send_gaze(message)` | Send one EyeLink message. |
+| `code` | Optional EEG marker code. |
+| `message` | Optional EyeLink message text. |
+| Return | `None`. |
 
-::: trackflow.beh.timeline.Timeline.send
-    options:
-      heading_level: 3
+### `send_eeg(...)`
 
-::: trackflow.beh.timeline.Timeline.send_eeg
-    options:
-      heading_level: 3
+Send one EEG marker.
 
-::: trackflow.beh.timeline.Timeline.send_gaze
-    options:
-      heading_level: 3
+| Argument | Description |
+| --- | --- |
+| `code` | EEG marker code. |
+| Return | `None`. |
+
+### `send_gaze(...)`
+
+Send one EyeLink message.
+
+| Argument | Description |
+| --- | --- |
+| `message` | EyeLink message text. |
+| Return | `None`. |
 
 ```python
 timeline.send(timeline.code["sample"], message="sample")
@@ -204,9 +201,11 @@ timeline.send(timeline.code["sample"], message="sample")
 Send helpers perform hardware side effects only. Experiment code must write any
 saved marker or message fields into row data explicitly.
 
-## Runtime Context
+## Runtime context
 
 Runtime object passed to custom trial-like objects and screen hooks.
+
+### `RunContext`
 
 | Attribute or method | Description |
 | --- | --- |
@@ -218,10 +217,6 @@ Runtime object passed to custom trial-like objects and screen hooks.
 | `send(...)`, `send_eeg(...)`, `send_gaze(...)` | Context versions of the timeline send helpers. |
 | `break_trial(screen=None, data=None)` | Interrupt the current trial from a screen hook. |
 
-::: trackflow.beh.timeline.RunContext
-    options:
-      heading_level: 3
-
 ```python
 def mark_sample(ctx, data):
     code = ctx.code["sample"]
@@ -229,9 +224,11 @@ def mark_sample(ctx, data):
     data["EEG"] = code
 ```
 
-## `TrialOutcome`
+## Custom trial outcomes
 
 Return object for custom trial-like integrations.
+
+### `TrialOutcome`
 
 | Field | Description |
 | --- | --- |
@@ -240,10 +237,6 @@ Return object for custom trial-like integrations.
 | `screen_rows` | Raw screen rows produced by the custom unit. |
 | `details` | Optional additional outcome fields. |
 
-::: trackflow.beh.timeline.TrialOutcome
-    options:
-      heading_level: 3
-
 ```python
 return beh.timeline.TrialOutcome(
     status="accepted",
@@ -251,23 +244,20 @@ return beh.timeline.TrialOutcome(
 )
 ```
 
-## Low-level `Screen` methods
+## Low-level screen methods
 
 Most scripts should create screens with timeline factory methods and run them
 with `timeline.run(...)`.
 
-| Method | Description |
-| --- | --- |
-| `Screen.update(...)` | Mutate prepared screen settings before a run. Can change timing, response collection, or saved row fields. |
-| `Screen.run(...)` | Present this screen and return one raw row without timeline storage or summary bookkeeping. |
+### `update(...)`
 
-::: trackflow.beh.timeline.Screen.update
-    options:
-      heading_level: 3
+Mutate prepared screen settings before a run. This can change timing, response
+collection, or saved row fields.
 
-::: trackflow.beh.timeline.Screen.run
-    options:
-      heading_level: 3
+### `run(...)`
+
+Present this screen and return one raw row without timeline storage or summary
+bookkeeping.
 
 ```python
 screen.update(data={"screen_name": "practice_fixation"})
