@@ -13,12 +13,6 @@ project-level file.
 PROJECT_NAME = "catload"
 DESTINATION = r"D:\trackflow_lab_copies\catload"
 
-PATHS = [
-    "assets",
-    "src/common",
-    "src/exp1b",
-]
-
 SETTINGS_OVERRIDES = {
     "RUNTIME.run_warmup": True,
     "MONITOR.fullscr": True,
@@ -63,11 +57,8 @@ if __name__ == "__main__":
 
 ## Copy scope
 
-The command copies the configured project `PATHS`, every settings file and
-entry script referenced by `LAUNCHERS`, and `packaging_config.py`.
-
-Copied files are selected from git-visible files, so `.gitignore` still controls
-generated files, local data, and other files that should not be deployed.
+The command copies git-visible project files. `.gitignore` controls generated
+files, local data, and other files that should not be deployed.
 
 The command also vendors the current `trackflow` source into the copied project,
 writes `trackflow_vendored.json`, and creates every configured Windows `.bat`

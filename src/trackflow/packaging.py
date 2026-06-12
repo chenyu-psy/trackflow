@@ -40,7 +40,6 @@ class PackageConfig:
     config_path: Path
     project_root: Path
     destination: Path
-    paths: Sequence[Path]
     settings_overrides: Mapping[str, Any]
     launchers: Sequence[LauncherConfig]
 
@@ -70,8 +69,8 @@ def load_package_config(
     """Read and validate project-level packaging settings.
 
     The config file is parsed statically. It must define literal top-level
-    values such as ``PROJECT_NAME``, ``DESTINATION``, ``PATHS``,
-    ``SETTINGS_OVERRIDES``, and ``LAUNCHERS``.
+    values such as ``PROJECT_NAME``, ``DESTINATION``, ``SETTINGS_OVERRIDES``,
+    and ``LAUNCHERS``.
     """
     resolved_config = Path(config_path).expanduser().resolve()
     if not resolved_config.is_file():
@@ -81,15 +80,11 @@ def load_package_config(
     values = _read_static_config(resolved_config)
     project_name = str(values.get("PROJECT_NAME") or project_root.name)
     destination_path = _resolve_destination(project_root, values, destination)
-    paths = _read_path_list(values.get("PATHS", []), "PATHS")
-    if not paths:
-        raise ValueError("PATHS must list at least one project path to package.")
 
     settings_overrides = _read_overrides(values.get("SETTINGS_OVERRIDES", {}), "SETTINGS_OVERRIDES")
     launchers = _read_launchers(values.get("LAUNCHERS"), settings_overrides)
 
     all_paths = [
-        *paths,
         resolved_config.relative_to(project_root),
         *(launcher.settings_path for launcher in launchers),
         *(launcher.entry_script for launcher in launchers),
@@ -102,7 +97,6 @@ def load_package_config(
         config_path=resolved_config,
         project_root=project_root,
         destination=destination_path,
-        paths=tuple(paths),
         settings_overrides=settings_overrides,
         launchers=tuple(launchers),
     )
@@ -178,29 +172,23 @@ def find_project_root(path: Path) -> Path:
 
 
 def select_package_files(config: PackageConfig) -> List[Path]:
-    """Select configured project files while respecting gitignore rules."""
-    git_visible = set(list_files_respecting_gitignore(config.project_root))
-    selected_roots = {
-        *config.paths,
+    """Select all git-visible project files while respecting gitignore rules."""
+    rel_paths = sorted(list_files_respecting_gitignore(config.project_root))
+    git_visible = set(rel_paths)
+    required_paths = {
         config.config_path.relative_to(config.project_root),
         *(launcher.settings_path for launcher in config.launchers),
         *(launcher.entry_script for launcher in config.launchers),
     }
-
-    rel_paths = [
-        rel_path
-        for rel_path in sorted(git_visible)
-        if any(_path_matches_selection(rel_path, root) for root in selected_roots)
-    ]
     missing = [
         path
-        for path in selected_roots
-        if not any(_path_matches_selection(rel_path, path) for rel_path in rel_paths)
+        for path in required_paths
+        if path not in git_visible
     ]
     if missing:
         missing_text = ", ".join(path.as_posix() for path in missing)
         raise FileNotFoundError(
-            "Configured package paths were not found among git-visible files: "
+            "Required launcher/config files were not found among git-visible files: "
             f"{missing_text}"
         )
     return rel_paths
@@ -294,7 +282,6 @@ def write_manifest(config: PackageConfig) -> Path:
         "destination": str(config.destination),
         "config_path": str(config.config_path.relative_to(config.project_root)),
         "project_name": config.project_name,
-        "paths": [path.as_posix() for path in config.paths],
         "settings_overrides": dict(config.settings_overrides),
         "launchers": {
             launcher.launcher_name: {
@@ -329,7 +316,6 @@ def _read_static_config(config_path: Path) -> Dict[str, Any]:
     allowed_names = {
         "PROJECT_NAME",
         "DESTINATION",
-        "PATHS",
         "SETTINGS_OVERRIDES",
         "LAUNCHERS",
     }
@@ -415,18 +401,6 @@ def _required_relative_path(config: Mapping[str, Any], field: str, label: str) -
     path = Path(str(value))
     _validate_relative_project_path(path, field)
     return path
-
-
-def _read_path_list(value: Any, label: str) -> List[Path]:
-    """Normalize a package path list from static config."""
-    if not isinstance(value, list):
-        raise ValueError(f"{label} must be a list of relative project paths.")
-    paths = []
-    for item in value:
-        path = Path(str(item))
-        _validate_relative_project_path(path, label)
-        paths.append(path)
-    return paths
 
 
 def _read_overrides(value: Any, label: str) -> Dict[str, Any]:

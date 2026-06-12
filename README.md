@@ -122,12 +122,6 @@ without installing `trackflow`. Add a project-level `packaging_config.py` file:
 PROJECT_NAME = "catload"
 DESTINATION = r"D:\trackflow_lab_copies\catload"
 
-PATHS = [
-    "assets",
-    "src/common",
-    "src/exp1b",
-]
-
 SETTINGS_OVERRIDES = {
     "MONITOR.fullscr": True,
     "MONITOR.resolution": [1920, 1080],
@@ -152,7 +146,7 @@ Then run:
 trackflow package
 ```
 
-The command copies the configured project `PATHS`, respects `.gitignore`,
+The command copies git-visible project files while respecting `.gitignore`,
 vendors the current `trackflow` source into the copied project, writes
 `trackflow_vendored.json`, and creates every Windows launcher listed in
 `LAUNCHERS`.

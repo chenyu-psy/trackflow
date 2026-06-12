@@ -886,8 +886,6 @@ class _LazyTextStim:
 
 def _close_window_and_quit(win: Any) -> None:
     """Close the PsychoPy window and quit after confirmed researcher exit."""
-    if hasattr(win, "saveFrameIntervals") and callable(win.saveFrameIntervals):
-        win.saveFrameIntervals()
     if hasattr(win, "close") and callable(win.close):
         win.close()
     core = _psychopy.load_core()

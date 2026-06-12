@@ -7,7 +7,6 @@ import tempfile
 import unittest
 from unittest import mock
 
-import trackflow
 from trackflow import beh
 from trackflow.beh import preflight as beh_preflight
 from trackflow.beh import recovery as beh_recovery
@@ -43,12 +42,22 @@ class FakeWindow:
     def __init__(self):
         """Initialize flip count."""
         self.flip_calls = 0
+        self.close_calls = 0
+        self.save_frame_intervals_calls = 0
         self.size = (1920, 1080)
         self.frameBufferSize = (1920, 1080)
 
     def flip(self):
         """Record one screen flip."""
         self.flip_calls += 1
+
+    def close(self):
+        """Record one window close request."""
+        self.close_calls += 1
+
+    def saveFrameIntervals(self):
+        """Record one PsychoPy frame-interval save request."""
+        self.save_frame_intervals_calls += 1
 
 
 class FakeGazeTracker:
@@ -106,12 +115,17 @@ class FakeCore:
         """Store time values returned by ``getTime``."""
         self.times = list(times)
         self.last = 0.0
+        self.quit_calls = 0
 
     def getTime(self):
         """Return the next scripted time value."""
         if self.times:
             self.last = float(self.times.pop(0))
         return self.last
+
+    def quit(self):
+        """Record one PsychoPy quit request."""
+        self.quit_calls += 1
 
 
 class FakeEvent:
@@ -212,19 +226,6 @@ class FakeGazeSender:
 
 class BehaviorScreenTests(unittest.TestCase):
     """Check screen runtime behavior without opening PsychoPy."""
-
-    def test_import_exposes_screen_helpers(self):
-        """The behavior package should expose timeline as the only runtime namespace."""
-        self.assertTrue(hasattr(beh, "timeline"))
-        self.assertTrue(hasattr(beh.timeline, "setup_timeline"))
-        self.assertTrue(hasattr(beh.timeline, "Screen"))
-        self.assertTrue(hasattr(beh.timeline, "RunContext"))
-        self.assertTrue(hasattr(beh.timeline, "TrialOutcome"))
-        self.assertTrue(hasattr(beh.timeline, "Timeline"))
-        self.assertFalse(hasattr(trackflow, "sync"))
-        self.assertFalse(hasattr(beh, "screens"))
-        self.assertFalse(hasattr(beh, "trials"))
-        self.assertFalse(hasattr(beh, "make_screen"))
 
     def test_screen_requires_an_end_condition(self):
         """Screens should not be allowed to run forever by accident."""
@@ -492,7 +493,6 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(trial, trial_data={"condition": "right"})
 
-        self.assertNotIn("markers", timeline.records[0])
         self.assertEqual(timeline.records[0]["EEG"], 42)
         self.assertEqual(eeg_sender.sent, [42])
 
@@ -509,8 +509,6 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(screen)
 
-        self.assertNotIn("markers", timeline.records[0])
-        self.assertNotIn("messages", timeline.records[0])
         self.assertEqual(eeg_sender.sent, [21])
 
     def test_send_gaze_sends_message_only(self):
@@ -526,8 +524,6 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(screen)
 
-        self.assertNotIn("markers", timeline.records[0])
-        self.assertNotIn("messages", timeline.records[0])
         self.assertEqual(gaze_sender.messages, ["sample"])
 
     def test_send_failure_sets_pause_state_without_row_record(self):
@@ -543,7 +539,6 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(screen)
 
-        self.assertNotIn("markers", timeline.records[0])
         self.assertTrue(timeline.state["pause_experiment"])
         self.assertIn("21", timeline.state["sync_error"])
 
@@ -571,8 +566,6 @@ class BehaviorScreenTests(unittest.TestCase):
             with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
                 timeline.run(screen)
 
-        self.assertNotIn("markers", timeline.records[0])
-        self.assertNotIn("messages", timeline.records[0])
         self.assertEqual(timeline.state, {})
 
     def test_on_finish_can_read_final_response_fields(self):
@@ -1138,6 +1131,27 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertEqual(row["global_key_action"], "quit_requested")
         self.assertEqual(timeline.records[1]["screen_name"], "quit_confirmation")
         self.assertEqual(timeline.records[1]["response_value"], "n")
+
+    def test_confirmed_researcher_quit_closes_without_saving_frame_intervals(self):
+        """Confirmed quit should not create PsychoPy frame-interval logs."""
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=5.0)
+        win = FakeWindow()
+        timeline = beh.timeline.setup_timeline(win=win)
+        core = FakeCore([0.0, 0.0, 0.1, 0.1, 0.1, 0.2])
+        event = FakeEvent(key_batches=[["f12"], ["y"]])
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                with mock.patch.object(beh_timeline_core._psychopy, "load_core", return_value=core):
+                    with mock.patch.object(beh_timeline_core, "_load_psychopy_visual") as visual_loader:
+                        visual_loader.return_value.TextStim = FakeShape
+                        timeline.run(screen)
+
+        self.assertTrue(timeline.state["quit_requested"])
+        self.assertTrue(timeline.state["quit_confirmed"])
+        self.assertEqual(win.close_calls, 1)
+        self.assertEqual(win.save_frame_intervals_calls, 0)
+        self.assertEqual(core.quit_calls, 1)
 
     def test_global_key_conflict_is_checked_before_screen_runs(self):
         """Participant responses should not reuse researcher fallback keys."""

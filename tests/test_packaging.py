@@ -28,7 +28,6 @@ class PackagingTests(unittest.TestCase):
             self.assertEqual(config.project_name, "catload")
             self.assertEqual(config.project_root, project.resolve())
             self.assertEqual(config.destination, destination.resolve())
-            self.assertEqual(config.paths, (Path("assets"), Path("src/common"), Path("src/exp1b"), Path("src/exp2")))
             self.assertEqual(config.settings_overrides["RUNTIME.run_warmup"], True)
             self.assertEqual(config.settings_overrides["MONITOR.resolution"], [1920, 1080])
             self.assertEqual([launcher.launcher_name for launcher in config.launchers], ["run_exp1b.bat", "run_exp2.bat"])
@@ -45,8 +44,7 @@ class PackagingTests(unittest.TestCase):
             config_path = project / "packaging_config.py"
             config_path.write_text(
                 "PROJECT_NAME = 'catload'\n"
-                "DESTINATION = 'packaged'\n"
-                "PATHS = ['src']\n",
+                "DESTINATION = 'packaged'\n",
                 encoding="utf-8",
             )
 
@@ -62,7 +60,6 @@ class PackagingTests(unittest.TestCase):
             config_path.write_text(
                 "PROJECT_NAME = 'catload'\n"
                 "DESTINATION = 'packaged'\n"
-                "PATHS = ['src']\n"
                 "LAUNCHERS = {'run_exp1b.bat': {'settings': 'src/exp1b/settings.py'}}\n",
                 encoding="utf-8",
             )
@@ -85,8 +82,8 @@ class PackagingTests(unittest.TestCase):
 
             self.assertEqual(config.destination, override.resolve())
 
-    def test_package_project_copies_project_paths_and_writes_launchers(self):
-        """Packaging should copy selected project paths, vendor trackflow, and write metadata."""
+    def test_package_project_copies_git_visible_files_and_writes_launchers(self):
+        """Packaging should copy git-visible files, vendor trackflow, and write metadata."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             project = Path(tmp_dir) / "project"
             destination = Path(tmp_dir) / "lab_copy"
@@ -101,6 +98,7 @@ class PackagingTests(unittest.TestCase):
             self.assertTrue((destination / "src" / "exp2" / "main.py").is_file())
             self.assertTrue((destination / "src" / "common" / "helper.py").is_file())
             self.assertTrue((destination / "assets" / "fixation.png").is_file())
+            self.assertTrue((destination / "notes" / "lab_checklist.md").is_file())
             self.assertFalse((destination / "ignored.txt").exists())
             self.assertTrue((destination / "trackflow" / "__init__.py").is_file())
             self.assertFalse(any((destination / "trackflow").rglob("*.pyc")))
@@ -130,7 +128,7 @@ class PackagingTests(unittest.TestCase):
             )
             self.assertEqual(manifest["trackflow_version"], __version__)
             self.assertEqual(manifest["project_name"], "catload")
-            self.assertEqual(manifest["paths"], ["assets", "src/common", "src/exp1b", "src/exp2"])
+            self.assertNotIn("paths", manifest)
             self.assertEqual(manifest["settings_overrides"]["MONITOR.fullscr"], True)
             self.assertEqual(manifest["launchers"]["run_exp1b.bat"]["entry_script"], "src/exp1b/main.py")
             self.assertEqual(manifest["launchers"]["run_exp2.bat"]["settings"], "src/exp2/settings.py")
@@ -164,7 +162,7 @@ class PackagingTests(unittest.TestCase):
             )
 
             self.assertTrue(summary.dry_run)
-            self.assertEqual(summary.checked_files, 7)
+            self.assertEqual(summary.checked_files, 9)
             self.assertFalse(destination.exists())
 
     def test_cli_package_runs_without_experiment_argument(self):
@@ -264,12 +262,14 @@ class PackagingTests(unittest.TestCase):
 def _make_fake_project(project: Path, destination: Path) -> Path:
     """Create a small experiment project for packaging tests."""
     (project / "assets").mkdir(parents=True)
+    (project / "notes").mkdir(parents=True)
     (project / "src" / "common").mkdir(parents=True)
     (project / "src" / "exp1b").mkdir(parents=True)
     (project / "src" / "exp2").mkdir(parents=True)
     (project / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
     (project / "ignored.txt").write_text("skip me\n", encoding="utf-8")
     (project / "assets" / "fixation.png").write_text("fake image\n", encoding="utf-8")
+    (project / "notes" / "lab_checklist.md").write_text("check the monitor\n", encoding="utf-8")
     (project / "src" / "common" / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
     (project / "src" / "exp1b" / "main.py").write_text(
         "import settings\nprint(settings.RUNTIME)\n",
@@ -282,7 +282,6 @@ def _make_fake_project(project: Path, destination: Path) -> Path:
     config_path.write_text(
         "PROJECT_NAME = 'catload'\n"
         f"DESTINATION = r'{destination}'\n"
-        "PATHS = ['assets', 'src/common', 'src/exp1b', 'src/exp2']\n"
         "SETTINGS_OVERRIDES = {\n"
         "    'RUNTIME.run_warmup': True,\n"
         "    'RUNTIME.realtime_tracker': True,\n"
@@ -343,7 +342,7 @@ def _write_settings(path: Path) -> None:
 def _stage_fake_project(project: Path) -> None:
     """Initialize git and stage fake project files."""
     _git(project, "init")
-    _git(project, "add", ".gitignore", "packaging_config.py", "assets")
+    _git(project, "add", ".gitignore", "packaging_config.py", "assets", "notes")
     _git(project, "add", "src/common", "src/exp1b", "src/exp2")
 
 

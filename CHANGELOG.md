@@ -9,7 +9,7 @@ The release workflow reads the section matching `project.version` in
 - Added project-level deployment packaging with `packaging_config.py`.
 - Changed `trackflow package` and `package_project(...)` to package one
   configured project without an experiment argument.
-- Copied configured project paths while respecting `.gitignore`.
+- Copied git-visible project files while respecting `.gitignore`.
 - Vendored the current `trackflow` source into packaged projects and generated
   configured Windows launchers for offline PsychoPy lab computers.
 - Added opt-in deployment settings overrides for literal settings blocks such
