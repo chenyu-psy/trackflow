@@ -118,12 +118,6 @@ class FakeVisual:
 class GazeTests(unittest.TestCase):
     """Check import, sample monitoring, and gaze feedback behavior."""
 
-    def test_import_exposes_gaze_module(self):
-        """The package should expose the gaze module at import time."""
-        self.assertTrue(hasattr(gaze, "GazeConfig"))
-        self.assertTrue(hasattr(gaze, "GazeBreakError"))
-        self.assertTrue(hasattr(gaze, "setup_tracker"))
-
     def test_gaze_config_defaults_match_discussed_api(self):
         """GazeConfig should contain gaze settings but no session switches."""
         cfg = gaze.GazeConfig()

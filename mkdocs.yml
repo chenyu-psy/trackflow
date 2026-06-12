@@ -34,7 +34,12 @@ nav:
       - EEG: api/eeg.md
   - Articles:
       - articles/index.md
-      - PsychoPy-first runtime helpers: articles/psychopy-first.md
+      - Start a project and make a lab copy: articles/start-project-lab-copy.md
+      - Understand the timeline: articles/understand-timeline.md
+      - Create custom stimulus functions: articles/custom-stimulus-functions.md
+      - Use screen hook functions: articles/screen-hook-functions.md
+      - Understand timeline data: articles/timeline-data.md
+      - Add EEG and eye tracking later: articles/eeg-eye-tracking.md
 
 markdown_extensions:
   - admonition

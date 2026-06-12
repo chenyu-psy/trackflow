@@ -1,42 +1,92 @@
-# Trial Planning
+# Trial Planning API
 
-Planning helpers operate on explicit dictionaries and return plain trial-data
-dictionaries that can be passed to `timeline.run(..., trial_data=...)`. They do
-not choose condition levels, response mappings, trial counts, or experiment
-design decisions.
+Reference for `trackflow.beh.design`, which builds explicit dictionaries for
+`timeline.run(..., trial_data=row)`.
 
-## Overview
+## `factor_conditions(...)`
 
-Use planning helpers only after the experiment design has already been chosen.
-They expand explicit conditions, repeat them, assign stable IDs, and check
-balance counts.
+Expand explicit factor levels into condition dictionaries.
 
-```python
-conditions = beh.design.factor_conditions({"condition": ["left", "right"]})
-trial_data = beh.design.build_trial_rows(conditions, repeats=2, random_order=True, seed=1)
-
-for row in trial_data:
-    timeline.run(trial, trial_data=row)
-```
-
-The function name `build_trial_rows(...)` is retained for now, but the returned
-`list[dict]` is runtime trial data, not completed raw screen rows or summary
-rows.
-
-## Conditions
+| Item | Description |
+| --- | --- |
+| Input | `factors`, a dictionary mapping factor names to single values or lists/tuples of values. |
+| Return | `list[dict]`, one dictionary per factor-level combination. |
+| Constraint | This function expands values only; it does not choose condition levels or trial counts. |
 
 ::: trackflow.beh.design.factor_conditions
     options:
       heading_level: 3
 
-## Trial Data
+```python
+conditions = beh.design.factor_conditions({
+    "condition": ["left", "right"],
+    "set_size": [2, 4],
+})
+```
+
+## `build_trial_rows(...)`
+
+Repeat and label condition dictionaries as runtime trial-data rows.
+
+| Argument | Description |
+| --- | --- |
+| `conditions` | Explicit condition dictionaries. |
+| `repeats` | Number of repetitions per condition row. |
+| `session_by`, `session_size` | Optional session grouping by field values or fixed row count. |
+| `block_size` | Optional rows per block within each session. |
+| `random_order`, `seed` | Optional reproducible shuffle within each session. |
+| `plan_prefix` | Prefix for generated `plan_id` values. |
+| Return | `list[dict]` with condition fields plus `plan_id`, `session_id`, `block_id`, `trial_id`, and `session_trial_id`. |
 
 ::: trackflow.beh.design.build_trial_rows
     options:
       heading_level: 3
 
-## Balance Checks
+```python
+trial_rows = beh.design.build_trial_rows(
+    conditions,
+    repeats=2,
+    block_size=8,
+    random_order=True,
+    seed=1,
+)
+```
+
+## `check_balance(...)`
+
+Count rows by selected fields.
+
+| Item | Description |
+| --- | --- |
+| Input | `rows`, a sequence of dictionaries, and `fields`, the fields defining balance cells. |
+| Return | Dictionary mapping field-value tuples to counts. |
+| Use | Inspect planned or condition rows before running a task. |
 
 ::: trackflow.beh.design.check_balance
     options:
       heading_level: 3
+
+```python
+counts = beh.design.check_balance(trial_rows, fields=["condition", "set_size"])
+```
+
+## `requeue_trials(...)`
+
+Insert one retry row into an existing mutable trial queue.
+
+| Argument | Description |
+| --- | --- |
+| `trial_queue` | Mutable list of remaining trial-data rows. Mutated in place. |
+| `retry_trial` | Trial-data row to retry. Copied before insertion. |
+| `placement` | `"next"`, `"random"`, or `"end"`. |
+| `min_delay` | Minimum delay before a random retry placement. |
+| `rng` | Optional `random.Random` instance for reproducible random insertion. |
+| Return | `None`. |
+
+::: trackflow.beh.design.requeue_trials
+    options:
+      heading_level: 3
+
+```python
+beh.design.requeue_trials(queue, failed_row, placement="end")
+```
