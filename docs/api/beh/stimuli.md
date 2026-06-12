@@ -1,166 +1,152 @@
-# Behavior Stimuli
+# Behavior Stimuli API
 
-Stimuli are drawables passed into `timeline.make_screen(...)`. `trackflow`
-keeps the stimulus and screen layers separate: stimuli define what should be
-drawn and when each drawable is visible within a screen, while screens decide
-screen duration, response collection, and raw screen-row output.
+Reference for `trackflow.beh.stimuli`, which creates timed drawable objects
+for `timeline.make_screen(...)`.
 
-```python
-from trackflow import beh
+## Shared timing fields
 
-timeline = beh.timeline.setup_timeline(win=win)
-fix = beh.stimuli.make_fixation(
-    win,
-    size=0.5,
-    color="#000000",
-    start=0.0,
-    end=0.5,
-    label="fixation",
-)
+| Field | Description |
+| --- | --- |
+| `start` | Seconds after screen onset when drawing begins. `None` means visible from screen start. |
+| `end` | Seconds after screen onset when drawing stops. `None` means visible until screen end. |
+| `label` | Optional researcher-facing label. |
+| Return | A drawable wrapper with `draw()` and timing-aware visibility. |
 
-screen = timeline.make_screen(
-    stimuli=[fix],
-    duration=0.5,
-)
-```
+Timing is screen-relative. It does not change screen duration or response
+windows.
 
-Stimuli do not create screens, run trials, collect responses, send markers, or
-write data. They are ordinary PsychoPy-compatible drawables, optionally wrapped
-with screen-relative visibility timing.
+## `wrap_stimulus(...)`
 
-## Common Parameters
+Wrap an existing PsychoPy or custom drawable object.
 
-These parameters describe the shared contract for built-in visual stimuli.
-Not every stimulus type uses every field, but built-ins should follow the same
-meanings when the field is present.
-
-| Parameter | Meaning | Default |
-| --- | --- | --- |
-| `start` | Seconds after screen onset when the stimulus starts drawing. | Screen start |
-| `end` | Seconds after screen onset when the stimulus stops drawing. | Screen end |
-| `label` | Researcher-facing label for debugging and future data records. | Built-in type label |
-| `pos` | Center position for built-in stimuli with a location. | `(0.0, 0.0)` |
-| `units` | PsychoPy units for built-in stimuli with geometric size or position. | `"deg"` |
-
-`start` and `end` are screen-relative. They do not create a new PsychoPy
-clock, change the screen duration, or decide when participant responses are
-accepted. Response timing belongs to the screen.
-
-## Built-in Stimuli
-
-All built-in helpers return a `Stimulus` wrapper. They support `start`, `end`,
-and `label`; the simple PsychoPy helpers also accept `**stim_kwargs` for
-additional PsychoPy stimulus options such as `height`, `wrapWidth`, `opacity`,
-`ori`, `contrast`, `interpolate`, `lineWidth`, or `depth`. The documented
-`stim.params` fields cover only common editable fields; advanced edits can use
-`stim.drawable` directly.
-
-### make_text(...)
-
-`make_text()` creates a timed wrapper around PsychoPy `TextStim`.
-
-| Parameter | Meaning | Default |
-| --- | --- | --- |
-| `win` | PsychoPy window used to build the text stimulus. | Required |
-| `text` | Text displayed by the stimulus. | Required |
-
-Editable params: `text`, `pos`, `color`, `height`, and `units`.
-
-### make_image(...)
-
-`make_image()` creates a timed wrapper around PsychoPy `ImageStim`.
-
-| Parameter | Meaning | Default |
-| --- | --- | --- |
-| `win` | PsychoPy window used to build the image stimulus. | Required |
-| `image` | Image source forwarded to PsychoPy. | Required |
-
-Editable params: `image`, `pos`, `size`, and `units`.
-
-### make_rect(...)
-
-`make_rect()` creates a timed wrapper around PsychoPy `Rect`.
-
-| Parameter | Meaning | Default |
-| --- | --- | --- |
-| `win` | PsychoPy window used to build the rect stimulus. | Required |
-| `width` | Rect width. | `0.5` |
-| `height` | Rect height. | `0.5` |
-| `pos` | Rect center position. | `(0.0, 0.0)` |
-| `color` | Fill and line color. HEX values and PsychoPy-supported names are allowed. | `"#000000"` |
-| `units` | PsychoPy units for rect geometry. | `"deg"` |
-
-Editable params: `width`, `height`, `pos`, `color`, and `units`.
-
-### make_circle(...)
-
-`make_circle()` creates a timed wrapper around PsychoPy `Circle`.
-
-| Parameter | Meaning | Default |
-| --- | --- | --- |
-| `win` | PsychoPy window used to build the circle stimulus. | Required |
-| `radius` | Circle radius. | `0.25` |
-| `pos` | Circle center position. | `(0.0, 0.0)` |
-| `color` | Fill and line color. HEX values and PsychoPy-supported names are allowed. | `"#000000"` |
-| `units` | PsychoPy units for circle geometry. | `"deg"` |
-
-Editable params: `radius`, `pos`, `color`, and `units`.
-
-### make_line(...)
-
-`make_line()` creates a timed wrapper around PsychoPy `Line`.
-
-| Parameter | Meaning | Default |
-| --- | --- | --- |
-| `win` | PsychoPy window used to build the line stimulus. | Required |
-| `start_pos` | Line start position. | Required |
-| `end_pos` | Line end position. | Required |
-| `color` | Line color. HEX values and PsychoPy-supported names are allowed. | `"#000000"` |
-| `units` | PsychoPy units for line geometry. | `"deg"` |
-
-Editable params: `start_pos`, `end_pos`, `color`, and `units`.
-
-### make_fixation(...)
-
-`make_fixation()` creates the current built-in fixation stimulus. It returns a
-timed wrapper that can be passed directly to `timeline.make_screen(...)`.
-
-| Parameter | Meaning | Default |
-| --- | --- | --- |
-| `win` | PsychoPy window used to build the fixation drawing objects. | Required |
-| `size` | Full outer diameter of the fixation stimulus. | `0.5` |
-| `pos` | Fixation center position. | `(0.0, 0.0)` |
-| `color` | Visible fixation color. HEX values and PsychoPy-supported names are allowed. | `"#000000"` |
-| `units` | PsychoPy units for fixation geometry. | `"deg"` |
-
-The fixation helper preserves the migrated `trackNeuAct` fixation proportions.
-Its transparent cross gap is not drawn as a background-colored mask, so it
-remains transparent on non-matching backgrounds.
-
-## Custom Stimuli
-
-Use `wrap_stimulus()` when you already have a PsychoPy stimulus or another
-object with a `draw()` method and only need `trackflow` to manage
-screen-relative visibility.
-
-```python
-from psychopy import visual
-from trackflow import beh
-
-text_stim = visual.TextStim(win, text="Ready?")
-ready_text = beh.stimuli.wrap_stimulus(
-    text_stim,
-    start=0.0,
-    end=1.0,
-    label="ready_text",
-)
-```
-
-Custom stimuli follow the same `start`, `end`, and `label` timing contract as
-built-in stimuli. The wrapped object remains a normal PsychoPy object; users
-can keep editing it directly before or during their ordinary PsychoPy trial
-code when the experiment design requires that flexibility.
+| Argument | Description |
+| --- | --- |
+| `drawable` | Object with a callable `draw()` method. |
+| `start`, `end`, `label` | Shared timing fields. |
+| Return | Timed drawable wrapper for `timeline.make_screen(...)`. |
 
 ::: trackflow.beh.stimuli.wrap_stimulus
     options:
       heading_level: 3
+
+```python
+ready_text = beh.stimuli.wrap_stimulus(text_stim, start=0.0, end=1.0)
+```
+
+## `make_text(...)`
+
+Create a timed wrapper around PsychoPy `TextStim`.
+
+| Argument | Description |
+| --- | --- |
+| `win` | PsychoPy window. |
+| `text` | Text displayed by the stimulus. |
+| `**stim_kwargs` | Additional keyword arguments forwarded to `TextStim`. |
+| Editable params | `text`, `pos`, `color`, `height`, and `units`. |
+
+::: trackflow.beh.stimuli.make_text
+    options:
+      heading_level: 3
+
+```python
+label = beh.stimuli.make_text(win, "Ready?", height=0.7, color="white")
+```
+
+## `make_image(...)`
+
+Create a timed wrapper around PsychoPy `ImageStim`.
+
+| Argument | Description |
+| --- | --- |
+| `win` | PsychoPy window. |
+| `image` | Image source forwarded to PsychoPy. |
+| `**stim_kwargs` | Additional keyword arguments forwarded to `ImageStim`. |
+| Editable params | `image`, `pos`, `size`, and `units`. |
+
+::: trackflow.beh.stimuli.make_image
+    options:
+      heading_level: 3
+
+```python
+picture = beh.stimuli.make_image(win, "sample.png", size=(4, 4))
+```
+
+## `make_rect(...)`
+
+Create a timed wrapper around PsychoPy `Rect`.
+
+| Argument | Description |
+| --- | --- |
+| `win` | PsychoPy window. |
+| `width`, `height` | Rect size. Defaults to `0.5` by `0.5`. |
+| `pos`, `color`, `units` | Rect position, fill/line color, and PsychoPy units. |
+| `**stim_kwargs` | Additional keyword arguments forwarded to `Rect`. |
+| Editable params | `width`, `height`, `pos`, `color`, and `units`. |
+
+::: trackflow.beh.stimuli.make_rect
+    options:
+      heading_level: 3
+
+```python
+box = beh.stimuli.make_rect(win, width=2, height=1, color="#FFFFFF")
+```
+
+## `make_circle(...)`
+
+Create a timed wrapper around PsychoPy `Circle`.
+
+| Argument | Description |
+| --- | --- |
+| `win` | PsychoPy window. |
+| `radius` | Circle radius. Defaults to `0.25`. |
+| `pos`, `color`, `units` | Circle position, fill/line color, and PsychoPy units. |
+| `**stim_kwargs` | Additional keyword arguments forwarded to `Circle`. |
+| Editable params | `radius`, `pos`, `color`, and `units`. |
+
+::: trackflow.beh.stimuli.make_circle
+    options:
+      heading_level: 3
+
+```python
+dot = beh.stimuli.make_circle(win, radius=0.15, color="#000000")
+```
+
+## `make_line(...)`
+
+Create a timed wrapper around PsychoPy `Line`.
+
+| Argument | Description |
+| --- | --- |
+| `win` | PsychoPy window. |
+| `start_pos`, `end_pos` | Line endpoints. |
+| `color`, `units` | Line color and PsychoPy units. |
+| `**stim_kwargs` | Additional keyword arguments forwarded to `Line`. |
+| Editable params | `start_pos`, `end_pos`, `color`, and `units`. |
+
+::: trackflow.beh.stimuli.make_line
+    options:
+      heading_level: 3
+
+```python
+line = beh.stimuli.make_line(win, start_pos=(-1, 0), end_pos=(1, 0))
+```
+
+## `make_fixation(...)`
+
+Create the built-in fixed-ratio fixation stimulus.
+
+| Argument | Description |
+| --- | --- |
+| `win` | PsychoPy window. |
+| `size` | Full outer diameter. Defaults to `0.5`. |
+| `pos`, `color`, `units` | Fixation center, visible color, and PsychoPy units. |
+| `start`, `end`, `label` | Shared timing fields. |
+| Editable params | `size`, `pos`, `color`, and `units`. |
+
+::: trackflow.beh.stimuli.make_fixation
+    options:
+      heading_level: 3
+
+```python
+fix = beh.stimuli.make_fixation(win, size=0.5, color="#000000")
+```
