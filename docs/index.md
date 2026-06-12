@@ -4,50 +4,25 @@
 </div>
 
 <p class="trackflow-lead">
-PsychoPy-first runtime helpers for behavior, eye tracking, EEG markers, and
-deployment workflows.
+PsychoPy-first helpers for running screens, saving behavior rows, sending EEG
+markers, checking eye tracking, and preparing lab copies.
 </p>
 
-## Overview
+## What trackflow helps with
 
-`trackflow` helps psychology researchers keep experiment scripts explicit while
-reusing the runtime pieces that often become repetitive across studies:
-behavior rows, trial summaries, interrupted attempts, EyeLink setup,
-tracker-owned gaze-break monitoring, EEG marker sending, and timeline-owned
-send helpers.
+When you write a PsychoPy experiment, you usually want the trial flow to stay
+visible in your own Python code. At the same time, you may not want to rewrite
+the same screen-running, data-saving, marker-sending, and eye-tracking
+bookkeeping for every study.
 
-The package is intentionally not a full experiment runner. Use ordinary
-PsychoPy code for the scientific procedure, timing, stimuli, and responses. Use
-`trackflow` for the parts that are shared across experiments and need to be
-consistent.
+`trackflow` gives you a `Timeline` for that repeated runtime work. You keep the
+experiment design in your script; the timeline handles the parts that should be
+consistent across screens and trials.
 
-The current public API is organized into three runtime areas:
+## Start with a timeline
 
-- `trackflow.beh` for timeline-owned behavior helpers organized into
-  timelines, stimuli, screens, trials, trial planning, interrupted attempts,
-  and data output
-- `trackflow.gaze` for EyeLink tracker setup, recording, and gaze-break
-  monitoring
-- `trackflow.eeg` for EEG setup and marker sending
-
-## Installation
-
-With `uv`:
-
-```bash
-uv add "trackflow @ git+https://github.com/chenyu-psy/trackflow.git"
-```
-
-With `pip`:
-
-```bash
-pip install "trackflow @ git+https://github.com/chenyu-psy/trackflow.git"
-```
-
-## A minimal behavior screen
-
-This example keeps PsychoPy in control of the window and uses `trackflow.beh`
-only for reusable screen construction and raw data bookkeeping.
+If you already have a PsychoPy window, pass it to `trackflow` and create a
+timeline:
 
 ```python
 from psychopy import visual
@@ -56,53 +31,159 @@ from trackflow import beh
 
 
 win = visual.Window(size=(1024, 768), units="deg")
-timeline = beh.timeline.setup_timeline(win=win, raw_data_file="data/S01_screen_data.jsonl")
-fix = beh.stimuli.make_fixation(win, size=0.5, color="#000000")
+timeline = beh.timeline.setup_timeline(
+    win=win,
+    raw_data_file="data/S01_screen_data.jsonl",
+)
+```
 
-screen = timeline.make_screen(
-    stimuli=[fix],
+The timeline keeps the window, output files, runtime state, and hook context in
+one place. Your experiment code still decides what happens next.
+
+## Build screens and trials
+
+Start with stimuli. Stimuli are drawable objects that screens can show:
+
+```python
+fixation = beh.stimuli.make_fixation(win, size=0.5, color="#000000")
+continue_text = beh.stimuli.make_text(
+    win,
+    "Press Space to continue",
+    pos=(0, -3),
+    height=0.35,
+    color="#000000",
+)
+```
+
+Then make screens from those stimuli. A screen decides what is shown, how long
+it can run, and which fields should be saved in that screen's behavior row:
+
+```python
+fixation_screen = timeline.make_screen(
+    stimuli=[fixation],
     duration=0.5,
     data={"screen_name": "fixation"},
 )
 
-timeline.run(screen)
+continue_screen = timeline.make_screen(
+    stimuli=[continue_text],
+    choices=["space"],
+    data={"screen_name": "continue"},
+)
 ```
 
-## Core ideas
+If several screens belong together, group them into a trial and run the trial:
 
-### Timeline owns runtime context
+```python
+trial = timeline.make_trial(
+    screens=[fixation_screen, continue_screen],
+)
 
-Create a timeline first. It stores the PsychoPy window, creates screens and
-trials, runs units, and owns behavior data output.
+timeline.run(trial, trial_data={"trial_type": "practice"})
+```
 
-### PsychoPy owns the experiment
+`timeline.run(...)` runs one screen or one trial at a time. Each completed
+screen still saves one flat behavior row.
 
-`trackflow` should not hide experiment design decisions. Trial phase order,
-stimulus timing, response mappings, condition assignment, and data meanings
-should remain visible in the experiment script or project settings.
+## Add EEG and eye tracking when needed
 
-### Simple screens are convenience helpers
+Create a tracker and sender first, then pass them to the timeline. Later sends
+will use the devices configured on that timeline.
 
-`timeline.make_screen()` is useful for simple fixed-duration screens and
-first-key responses. For complex trials, write a normal PsychoPy trial object
-with `run(ctx)` and return `beh.timeline.TrialOutcome` so
-`beh.timeline.Timeline` can still handle output and recovery bookkeeping.
+```python
+from trackflow import beh, eeg, gaze
 
-Use `on_frame(ctx, data, elapsed)` for real-time monitoring such as gaze breaks
-or early presses. Eye tracking is available as `ctx.tracker` when a tracker was
-passed to the timeline. The hook can call `ctx.break_trial(...)` so experiment
-code can record the interrupted attempt and decide its own retry policy.
 
-### Sends stay visible
+tracker = gaze.setup_tracker(
+    win=win,
+    cfg=gaze.GazeConfig(),
+    edf_name="S01.edf",
+    monitor=monitor,
+    debug=True,
+)
+sender = eeg.setup_port(debug=True, code={"sample": 12})
 
-EEG and EyeLink sends happen from timeline hooks with `ctx.send(...)`. The hook
-still chooses marker codes, message text, send timing, and any saved data
-fields.
+timeline = beh.timeline.setup_timeline(
+    win=win,
+    tracker=tracker,
+    eeg=sender,
+)
+```
+
+Once the devices are set up, use the timeline during the study whenever you
+want to send a marker to EEG, a message to the eye tracker, or both:
+
+```python
+timeline.send(code=12)
+timeline.send(message="trial 1")
+timeline.send(code=12, message="trial 1")
+```
+
+`code` sends an EEG marker when an EEG sender is configured. `message` sends an
+EyeLink message when a tracker is configured. Passing both sends them from the
+same timeline call.
+
+Use the runtime guides when you need to send markers at exact screen events or
+check gaze during a screen.
+
+## Keep the experiment design visible
+
+Use `trackflow` for runtime support, not for hiding design choices. Keep these
+decisions in your experiment code, settings, or design files where you can
+inspect them before running participants:
+
+- phase order
+- stimulus and delay durations
+- response keys and response windows
+- marker codes, marker labels, and EyeLink messages
+- condition assignment, balancing, and trial counts
+- retry, rejection, pause, and exclusion rules
+- saved behavior fields and their meanings
+
+## Install, setup, and deploy
+
+Use `uv` as the main project workflow:
+
+```bash
+uv add "trackflow @ git+https://github.com/chenyu-psy/trackflow.git"
+```
+
+`pip` also works when you are managing the Python environment another way:
+
+```bash
+pip install "trackflow @ git+https://github.com/chenyu-psy/trackflow.git"
+```
+
+When you want `trackflow` to create a standard project layout or a generated
+experiment scaffold, use:
+
+```bash
+uv run trackflow init
+uv run trackflow add-experiment exp1
+```
+
+When a PsychoPy lab computer should run the project without installing
+`trackflow`, package the project:
+
+```bash
+uv run trackflow package
+```
+
+Packaging copies git-visible project files, vendors the current `trackflow`
+source, applies deployment overrides only to the copied settings files, and
+writes Windows launchers.
+
+## Next steps
+
+Use articles for practical guides, and use the API reference when you need to
+look up a function, class, or method.
 
 <div class="trackflow-link-list">
-  <a href="articles/psychopy-first/">PsychoPy-first runtime helpers</a>
-  <a href="articles/deployment-packaging/">Deployment packaging</a>
-  <a href="api/beh/">Behavior API</a>
+  <a href="articles/start-project-lab-copy/">Start a project and make a lab copy</a>
+  <a href="articles/understand-timeline/">Understand the timeline</a>
+  <a href="articles/screen-hook-functions/">Use screen hook functions</a>
+  <a href="articles/timeline-data/">Understand timeline data</a>
+  <a href="api/beh/timeline/">Behavior timeline API</a>
   <a href="api/gaze/">Eye tracking API</a>
   <a href="api/eeg/">EEG API</a>
 </div>
