@@ -1,161 +1,187 @@
 """Tests for project packaging and deployment-time vendoring."""
 
+import io
 import json
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 from trackflow import __version__
+from trackflow import cli as trackflow_cli
 from trackflow import packaging as trackflow_packaging
 
 
 class PackagingTests(unittest.TestCase):
     """Check project packaging without requiring PsychoPy."""
 
-    def test_load_package_config_reads_packaging_config_without_importing_settings(self):
+    def test_load_package_config_reads_project_config_without_importing_settings(self):
         """Config loading should not execute experiment settings imports."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             project = Path(tmp_dir) / "project"
-            destination_root = Path(tmp_dir) / "lab_copies"
-            config_path = _make_fake_project(project, destination_root)
+            destination = Path(tmp_dir) / "lab_copy"
+            config_path = _make_fake_project(project, destination)
 
-            config = trackflow_packaging.load_package_config("exp1b", config_path=config_path)
+            config = trackflow_packaging.load_package_config(config_path=config_path)
 
-            self.assertEqual(config.experiment_name, "exp1b")
+            self.assertEqual(config.project_name, "catload")
             self.assertEqual(config.project_root, project.resolve())
-            self.assertEqual(config.destination, (destination_root / "exp1b").resolve())
-            self.assertEqual(config.settings_path, Path("src/exp1b/settings.py"))
-            self.assertEqual(config.entry_script, Path("src/exp1b/main.py"))
-            self.assertEqual(config.launcher_name, "run_exp1b.bat")
-            self.assertEqual(config.python, r"C:\PsychoPy\python.exe")
-            self.assertEqual(config.shared_paths, (Path("assets"), Path("src/common")))
-            self.assertEqual(config.experiment_paths, (Path("src/exp1b"),))
+            self.assertEqual(config.destination, destination.resolve())
+            self.assertEqual(config.paths, (Path("assets"), Path("src/common"), Path("src/exp1b"), Path("src/exp2")))
             self.assertEqual(config.settings_overrides["RUNTIME.run_warmup"], True)
-            self.assertEqual(config.settings_overrides["RUNTIME.realtime_tracker"], True)
+            self.assertEqual(config.settings_overrides["MONITOR.resolution"], [1920, 1080])
+            self.assertEqual([launcher.launcher_name for launcher in config.launchers], ["run_exp1b.bat", "run_exp2.bat"])
+            self.assertEqual(config.launchers[0].settings_path, Path("src/exp1b/settings.py"))
+            self.assertEqual(config.launchers[0].entry_script, Path("src/exp1b/main.py"))
+            self.assertEqual(config.launchers[0].python, r"C:\PsychoPy\python.exe")
+            self.assertEqual(config.launchers[0].settings_overrides["DESIGN.N_trials"], 200)
 
-    def test_missing_experiment_name_is_a_clear_error(self):
-        """The CLI experiment argument must name a configured experiment."""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project = Path(tmp_dir) / "project"
-            destination_root = Path(tmp_dir) / "lab_copies"
-            config_path = _make_fake_project(project, destination_root)
-
-            with self.assertRaisesRegex(ValueError, "not in EXPERIMENTS"):
-                trackflow_packaging.load_package_config("missing", config_path=config_path)
-
-    def test_missing_required_fields_are_clear_errors(self):
-        """Each experiment must define settings and entry_script."""
+    def test_missing_launchers_is_a_clear_error(self):
+        """A project config must declare at least one launcher."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             project = Path(tmp_dir) / "project"
             (project / "src").mkdir(parents=True)
             config_path = project / "packaging_config.py"
             config_path.write_text(
-                "DESTINATION_ROOT = 'packaged'\n"
-                "EXPERIMENTS = {'exp1b': {'settings': 'src/exp1b/settings.py'}}\n",
+                "PROJECT_NAME = 'catload'\n"
+                "DESTINATION = 'packaged'\n"
+                "PATHS = ['src']\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "LAUNCHERS"):
+                trackflow_packaging.load_package_config(config_path=config_path)
+
+    def test_missing_required_launcher_fields_are_clear_errors(self):
+        """Each launcher must define settings and entry_script."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project = Path(tmp_dir) / "project"
+            (project / "src").mkdir(parents=True)
+            config_path = project / "packaging_config.py"
+            config_path.write_text(
+                "PROJECT_NAME = 'catload'\n"
+                "DESTINATION = 'packaged'\n"
+                "PATHS = ['src']\n"
+                "LAUNCHERS = {'run_exp1b.bat': {'settings': 'src/exp1b/settings.py'}}\n",
                 encoding="utf-8",
             )
 
             with self.assertRaisesRegex(ValueError, "entry_script"):
-                trackflow_packaging.load_package_config("exp1b", config_path=config_path)
+                trackflow_packaging.load_package_config(config_path=config_path)
 
     def test_destination_override_replaces_config_destination(self):
         """The CLI destination override should not require editing config."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             project = Path(tmp_dir) / "project"
-            destination_root = Path(tmp_dir) / "lab_copies"
+            destination = Path(tmp_dir) / "lab_copy"
             override = Path(tmp_dir) / "override_copy"
-            config_path = _make_fake_project(project, destination_root)
+            config_path = _make_fake_project(project, destination)
 
             config = trackflow_packaging.load_package_config(
-                "exp1b",
                 config_path=config_path,
                 destination=override,
             )
 
             self.assertEqual(config.destination, override.resolve())
 
-    def test_package_project_copies_selected_paths_and_vendors_trackflow(self):
-        """Packaging should copy selected files, vendor trackflow, and write metadata."""
+    def test_package_project_copies_project_paths_and_writes_launchers(self):
+        """Packaging should copy selected project paths, vendor trackflow, and write metadata."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             project = Path(tmp_dir) / "project"
-            destination_root = Path(tmp_dir) / "lab_copies"
-            destination = destination_root / "exp1b"
-            config_path = _make_fake_project(project, destination_root)
-            _git(project, "init")
-            _git(project, "add", ".gitignore", "packaging_config.py", "assets")
-            _git(project, "add", "src/common", "src/exp1b", "src/exp2")
+            destination = Path(tmp_dir) / "lab_copy"
+            config_path = _make_fake_project(project, destination)
+            _stage_fake_project(project)
 
-            summary = trackflow_packaging.package_project("exp1b", config_path=config_path)
+            summary = trackflow_packaging.package_project(config_path=config_path)
 
             self.assertFalse(summary.dry_run)
+            self.assertEqual(summary.project_name, "catload")
             self.assertTrue((destination / "src" / "exp1b" / "main.py").is_file())
+            self.assertTrue((destination / "src" / "exp2" / "main.py").is_file())
             self.assertTrue((destination / "src" / "common" / "helper.py").is_file())
             self.assertTrue((destination / "assets" / "fixation.png").is_file())
-            self.assertFalse((destination / "src" / "exp2").exists())
             self.assertFalse((destination / "ignored.txt").exists())
             self.assertTrue((destination / "trackflow" / "__init__.py").is_file())
             self.assertFalse(any((destination / "trackflow").rglob("*.pyc")))
             self.assertTrue((destination / "run_exp1b.bat").is_file())
+            self.assertTrue((destination / "run_exp2.bat").is_file())
 
-            copied_settings = (destination / "src" / "exp1b" / "settings.py").read_text(
+            exp1_settings = (destination / "src" / "exp1b" / "settings.py").read_text(
                 encoding="utf-8"
             )
-            self.assertIn('"run_warmup": True', copied_settings)
-            self.assertIn('"realtime_tracker": True', copied_settings)
-            self.assertIn('"realtime_eeg": True', copied_settings)
-            self.assertIn('"fullscr": True', copied_settings)
-            self.assertIn('"resolution": [1920, 1080]', copied_settings)
+            self.assertIn('"run_warmup": True', exp1_settings)
+            self.assertIn('"realtime_tracker": True', exp1_settings)
+            self.assertIn('"realtime_eeg": True', exp1_settings)
+            self.assertIn('"fullscr": True', exp1_settings)
+            self.assertIn('"resolution": [1920, 1080]', exp1_settings)
+            self.assertIn('"N_trials": 200', exp1_settings)
+            self.assertIn('"N_trials": 5', exp1_settings)
 
             source_settings = (project / "src" / "exp1b" / "settings.py").read_text(
                 encoding="utf-8"
             )
             self.assertIn('"run_warmup": False', source_settings)
             self.assertIn('"fullscr": False', source_settings)
+            self.assertIn('"N_trials": 20', source_settings)
 
             manifest = json.loads(
                 (destination / "trackflow_vendored.json").read_text(encoding="utf-8")
             )
             self.assertEqual(manifest["trackflow_version"], __version__)
-            self.assertEqual(manifest["experiment_name"], "exp1b")
-            self.assertEqual(manifest["entry_script"], "src/exp1b/main.py")
-            self.assertEqual(manifest["launcher_name"], "run_exp1b.bat")
-            self.assertEqual(manifest["python"], r"C:\PsychoPy\python.exe")
-            self.assertEqual(manifest["shared_paths"], ["assets", "src/common"])
-            self.assertEqual(manifest["experiment_paths"], ["src/exp1b"])
+            self.assertEqual(manifest["project_name"], "catload")
+            self.assertEqual(manifest["paths"], ["assets", "src/common", "src/exp1b", "src/exp2"])
             self.assertEqual(manifest["settings_overrides"]["MONITOR.fullscr"], True)
+            self.assertEqual(manifest["launchers"]["run_exp1b.bat"]["entry_script"], "src/exp1b/main.py")
+            self.assertEqual(manifest["launchers"]["run_exp2.bat"]["settings"], "src/exp2/settings.py")
 
-    def test_experiment_overrides_take_precedence_over_global_overrides(self):
-        """Experiment settings_overrides should win over global settings."""
+    def test_launcher_overrides_take_precedence_over_project_overrides(self):
+        """Launcher settings_overrides should win over project settings."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             project = Path(tmp_dir) / "project"
-            destination_root = Path(tmp_dir) / "lab_copies"
-            config_path = _make_fake_project(project, destination_root)
+            destination = Path(tmp_dir) / "lab_copy"
+            config_path = _make_fake_project(project, destination)
+            _stage_fake_project(project)
 
-            config = trackflow_packaging.load_package_config("exp1b", config_path=config_path)
+            trackflow_packaging.package_project(config_path=config_path)
 
-            self.assertEqual(config.settings_overrides["MONITOR.distance"], 120)
+            exp2_settings = (destination / "src" / "exp2" / "settings.py").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn('"distance": 120', exp2_settings)
 
     def test_dry_run_does_not_write_destination(self):
         """Dry runs should inspect selected files without creating output."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             project = Path(tmp_dir) / "project"
-            destination_root = Path(tmp_dir) / "lab_copies"
-            destination = destination_root / "exp1b"
-            config_path = _make_fake_project(project, destination_root)
-            _git(project, "init")
-            _git(project, "add", ".gitignore", "packaging_config.py", "assets")
-            _git(project, "add", "src/common", "src/exp1b", "src/exp2")
+            destination = Path(tmp_dir) / "lab_copy"
+            config_path = _make_fake_project(project, destination)
+            _stage_fake_project(project)
 
             summary = trackflow_packaging.package_project(
-                "exp1b",
                 config_path=config_path,
                 dry_run=True,
             )
 
             self.assertTrue(summary.dry_run)
-            self.assertGreaterEqual(summary.checked_files, 5)
+            self.assertEqual(summary.checked_files, 7)
             self.assertFalse(destination.exists())
+
+    def test_cli_package_runs_without_experiment_argument(self):
+        """The package CLI should package the project named by the config."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project = Path(tmp_dir) / "project"
+            destination = Path(tmp_dir) / "lab_copy"
+            config_path = _make_fake_project(project, destination)
+            _stage_fake_project(project)
+            stdout = io.StringIO()
+
+            with redirect_stdout(stdout):
+                result = trackflow_cli.main(["package", "--config", str(config_path)])
+
+            self.assertEqual(result, 0)
+            self.assertIn("Project: catload", stdout.getvalue())
+            self.assertTrue((destination / "run_exp1b.bat").is_file())
 
     def test_rewrite_settings_text_fails_on_missing_block(self):
         """Overrides should fail when the standard settings block is absent."""
@@ -217,11 +243,11 @@ class PackagingTests(unittest.TestCase):
         """The launcher should expose vendored trackflow and project src imports."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             project = Path(tmp_dir) / "project"
-            destination_root = Path(tmp_dir) / "lab_copies"
-            config_path = _make_fake_project(project, destination_root)
-            config = trackflow_packaging.load_package_config("exp1b", config_path=config_path)
+            destination = Path(tmp_dir) / "lab_copy"
+            config_path = _make_fake_project(project, destination)
+            config = trackflow_packaging.load_package_config(config_path=config_path)
 
-            launcher = trackflow_packaging._render_launcher(config)
+            launcher = trackflow_packaging._render_launcher(config.launchers[0])
 
             self.assertIn('set "PROJECT_ROOT=%~dp0"', launcher)
             self.assertIn('set "PROJECT_SRC=%~dp0src"', launcher)
@@ -235,7 +261,7 @@ class PackagingTests(unittest.TestCase):
             self.assertIn("runpy.run_path(entry, run_name='__main__')", launcher)
 
 
-def _make_fake_project(project: Path, destination_root: Path) -> Path:
+def _make_fake_project(project: Path, destination: Path) -> Path:
     """Create a small experiment project for packaging tests."""
     (project / "assets").mkdir(parents=True)
     (project / "src" / "common").mkdir(parents=True)
@@ -250,7 +276,48 @@ def _make_fake_project(project: Path, destination_root: Path) -> Path:
         encoding="utf-8",
     )
     (project / "src" / "exp2" / "main.py").write_text("print('other')\n", encoding="utf-8")
-    (project / "src" / "exp1b" / "settings.py").write_text(
+    _write_settings(project / "src" / "exp1b" / "settings.py")
+    _write_settings(project / "src" / "exp2" / "settings.py")
+    config_path = project / "packaging_config.py"
+    config_path.write_text(
+        "PROJECT_NAME = 'catload'\n"
+        f"DESTINATION = r'{destination}'\n"
+        "PATHS = ['assets', 'src/common', 'src/exp1b', 'src/exp2']\n"
+        "SETTINGS_OVERRIDES = {\n"
+        "    'RUNTIME.run_warmup': True,\n"
+        "    'RUNTIME.realtime_tracker': True,\n"
+        "    'RUNTIME.realtime_eeg': True,\n"
+        "    'MONITOR.fullscr': True,\n"
+        "    'MONITOR.resolution': [1920, 1080],\n"
+        "    'MONITOR.distance': 90,\n"
+        "}\n"
+        "LAUNCHERS = {\n"
+        "    'run_exp1b.bat': {\n"
+        "        'settings': 'src/exp1b/settings.py',\n"
+        "        'entry_script': 'src/exp1b/main.py',\n"
+        "        'python': r'C:\\PsychoPy\\python.exe',\n"
+        "        'settings_overrides': {\n"
+        "            'DESIGN.N_trials': 200,\n"
+        "            'PRACTICE.N_trials': 5,\n"
+        "        },\n"
+        "    },\n"
+        "    'run_exp2.bat': {\n"
+        "        'settings': 'src/exp2/settings.py',\n"
+        "        'entry_script': 'src/exp2/main.py',\n"
+        "        'python': None,\n"
+        "        'settings_overrides': {\n"
+        "            'MONITOR.distance': 120,\n"
+        "        },\n"
+        "    },\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def _write_settings(path: Path) -> None:
+    """Write one literal settings file for packaging tests."""
+    path.write_text(
         "raise RuntimeError('settings was imported')\n"
         "RUNTIME = {\n"
         '    "run_warmup": False,\n'
@@ -262,36 +329,22 @@ def _make_fake_project(project: Path, destination_root: Path) -> Path:
         '    "fullscr": False,\n'
         '    "distance": 60,\n'
         '    "width": 53,\n'
-        "}\n",
-        encoding="utf-8",
-    )
-    config_path = project / "packaging_config.py"
-    config_path.write_text(
-        f"DESTINATION_ROOT = r'{destination_root}'\n"
-        "SHARED_PATHS = ['assets', 'src/common']\n"
-        "GLOBAL_SETTINGS_OVERRIDES = {\n"
-        "    'RUNTIME.run_warmup': True,\n"
-        "    'MONITOR.fullscr': True,\n"
-        "    'MONITOR.resolution': [1920, 1080],\n"
-        "    'MONITOR.distance': 90,\n"
         "}\n"
-        "EXPERIMENTS = {\n"
-        "    'exp1b': {\n"
-        "        'settings': 'src/exp1b/settings.py',\n"
-        "        'entry_script': 'src/exp1b/main.py',\n"
-        "        'launcher_name': 'run_exp1b.bat',\n"
-        "        'python': r'C:\\PsychoPy\\python.exe',\n"
-        "        'paths': ['src/exp1b'],\n"
-        "        'settings_overrides': {\n"
-        "            'RUNTIME.realtime_tracker': True,\n"
-        "            'RUNTIME.realtime_eeg': True,\n"
-        "            'MONITOR.distance': 120,\n"
-        "        },\n"
-        "    },\n"
+        "DESIGN = {\n"
+        '    "N_trials": 20,\n'
+        "}\n"
+        "PRACTICE = {\n"
+        '    "N_trials": 2,\n'
         "}\n",
         encoding="utf-8",
     )
-    return config_path
+
+
+def _stage_fake_project(project: Path) -> None:
+    """Initialize git and stage fake project files."""
+    _git(project, "init")
+    _git(project, "add", ".gitignore", "packaging_config.py", "assets")
+    _git(project, "add", "src/common", "src/exp1b", "src/exp2")
 
 
 def _git(cwd: Path, *args: str) -> None:

@@ -22,53 +22,56 @@ MANIFEST_NAME = "trackflow_vendored.json"
 
 
 @dataclass(frozen=True)
-class PackageConfig:
-    """Normalized project-level package settings for one experiment."""
+class LauncherConfig:
+    """Normalized launcher settings for one runnable entry in a project."""
 
-    experiment_name: str
+    launcher_name: str
+    settings_path: Path
+    entry_script: Path
+    python: Optional[str]
+    settings_overrides: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class PackageConfig:
+    """Normalized project-level package settings."""
+
+    project_name: str
     config_path: Path
     project_root: Path
     destination: Path
-    settings_path: Path
-    entry_script: Path
-    launcher_name: str
-    python: Optional[str]
-    shared_paths: Sequence[Path]
-    experiment_paths: Sequence[Path]
+    paths: Sequence[Path]
     settings_overrides: Mapping[str, Any]
+    launchers: Sequence[LauncherConfig]
 
 
 @dataclass(frozen=True)
 class PackageSummary:
     """Summary of a package operation for CLI reporting and tests."""
 
-    experiment_name: str
+    project_name: str
     project_root: Path
     destination: Path
     config_path: Path
-    settings_path: Path
-    entry_script: Path
-    launcher_path: Path
+    launcher_paths: Sequence[Path]
     manifest_path: Path
     checked_files: int
     copied_files: int
     skipped_files: int
     removed_temp_files: int
-    settings_overrides: Mapping[str, Any]
     dry_run: bool
 
 
 def load_package_config(
-    experiment_name: str,
     *,
     config_path: Union[Path, str] = DEFAULT_CONFIG_NAME,
     destination: Optional[Union[Path, str]] = None,
 ) -> PackageConfig:
-    """Read and validate project-level packaging settings for one experiment.
+    """Read and validate project-level packaging settings.
 
     The config file is parsed statically. It must define literal top-level
-    values such as ``DESTINATION_ROOT``, ``SHARED_PATHS``,
-    ``GLOBAL_SETTINGS_OVERRIDES``, and ``EXPERIMENTS``.
+    values such as ``PROJECT_NAME``, ``DESTINATION``, ``PATHS``,
+    ``SETTINGS_OVERRIDES``, and ``LAUNCHERS``.
     """
     resolved_config = Path(config_path).expanduser().resolve()
     if not resolved_config.is_file():
@@ -76,80 +79,43 @@ def load_package_config(
 
     project_root = find_project_root(resolved_config)
     values = _read_static_config(resolved_config)
-    experiments = values.get("EXPERIMENTS")
-    if not isinstance(experiments, dict):
-        raise ValueError(f"{resolved_config} must define EXPERIMENTS as a dictionary.")
-    if experiment_name not in experiments:
-        available = ", ".join(sorted(str(name) for name in experiments)) or "none"
-        raise ValueError(f'Experiment "{experiment_name}" is not in EXPERIMENTS ({available}).')
+    project_name = str(values.get("PROJECT_NAME") or project_root.name)
+    destination_path = _resolve_destination(project_root, values, destination)
+    paths = _read_path_list(values.get("PATHS", []), "PATHS")
+    if not paths:
+        raise ValueError("PATHS must list at least one project path to package.")
 
-    experiment = experiments[experiment_name]
-    if not isinstance(experiment, dict):
-        raise ValueError(f'EXPERIMENTS["{experiment_name}"] must be a dictionary.')
+    settings_overrides = _read_overrides(values.get("SETTINGS_OVERRIDES", {}), "SETTINGS_OVERRIDES")
+    launchers = _read_launchers(values.get("LAUNCHERS"), settings_overrides)
 
-    destination_path = _resolve_destination(
-        project_root,
-        experiment_name,
-        values,
-        experiment,
-        destination,
-    )
-    settings_path = _required_relative_path(experiment, "settings", experiment_name)
-    entry_script = _required_relative_path(experiment, "entry_script", experiment_name)
-
-    launcher_name = str(experiment.get("launcher_name", f"run_{experiment_name}.bat"))
-    if Path(launcher_name).name != launcher_name or not launcher_name.lower().endswith(".bat"):
-        raise ValueError(
-            f'EXPERIMENTS["{experiment_name}"]["launcher_name"] must be a .bat filename.'
-        )
-
-    python_path = experiment.get("python")
-    if python_path is not None:
-        python_path = str(python_path)
-
-    shared_paths = _read_path_list(values.get("SHARED_PATHS", []), "SHARED_PATHS")
-    experiment_paths = _read_path_list(
-        experiment.get("paths", [str(settings_path.parent)]),
-        f'EXPERIMENTS["{experiment_name}"]["paths"]',
-    )
-    all_paths = [*shared_paths, *experiment_paths, settings_path, entry_script]
+    all_paths = [
+        *paths,
+        resolved_config.relative_to(project_root),
+        *(launcher.settings_path for launcher in launchers),
+        *(launcher.entry_script for launcher in launchers),
+    ]
     for rel_path in all_paths:
         _validate_relative_project_path(rel_path, "package path")
 
-    overrides = _merge_overrides(
-        values.get("GLOBAL_SETTINGS_OVERRIDES", {}),
-        experiment.get("settings_overrides", {}),
-        experiment_name,
-    )
-
     return PackageConfig(
-        experiment_name=experiment_name,
+        project_name=project_name,
         config_path=resolved_config,
         project_root=project_root,
         destination=destination_path,
-        settings_path=settings_path,
-        entry_script=entry_script,
-        launcher_name=launcher_name,
-        python=python_path,
-        shared_paths=tuple(shared_paths),
-        experiment_paths=tuple(experiment_paths),
-        settings_overrides=overrides,
+        paths=tuple(paths),
+        settings_overrides=settings_overrides,
+        launchers=tuple(launchers),
     )
 
 
 def package_project(
-    experiment_name: str,
     *,
     config_path: Union[Path, str] = DEFAULT_CONFIG_NAME,
     destination: Optional[Union[Path, str]] = None,
     dry_run: bool = False,
 ) -> PackageSummary:
-    """Copy one configured experiment and vendor ``trackflow`` into the result."""
-    config = load_package_config(
-        experiment_name,
-        config_path=config_path,
-        destination=destination,
-    )
+    """Copy one configured project and vendor ``trackflow`` into the result."""
+    config = load_package_config(config_path=config_path, destination=destination)
     _validate_destination(config.project_root, config.destination)
     rel_paths = select_package_files(config)
 
@@ -182,7 +148,8 @@ def package_project(
 
     apply_settings_overrides(config)
     vendor_trackflow(config.destination)
-    write_launcher(config)
+    for launcher in config.launchers:
+        write_launcher(config, launcher)
     write_manifest(config)
     removed_temp_count = remove_macos_temp_files(config.destination)
 
@@ -211,14 +178,13 @@ def find_project_root(path: Path) -> Path:
 
 
 def select_package_files(config: PackageConfig) -> List[Path]:
-    """Select configured files while respecting gitignore rules."""
+    """Select configured project files while respecting gitignore rules."""
     git_visible = set(list_files_respecting_gitignore(config.project_root))
     selected_roots = {
-        *config.shared_paths,
-        *config.experiment_paths,
-        config.settings_path,
-        config.entry_script,
+        *config.paths,
         config.config_path.relative_to(config.project_root),
+        *(launcher.settings_path for launcher in config.launchers),
+        *(launcher.entry_script for launcher in config.launchers),
     }
 
     rel_paths = [
@@ -259,17 +225,18 @@ def list_files_respecting_gitignore(project_root: Path) -> List[Path]:
 
 
 def apply_settings_overrides(config: PackageConfig) -> None:
-    """Apply deployment overrides to the copied settings file, if configured."""
-    if not config.settings_overrides:
-        return
-    copied_settings_path = config.destination / config.settings_path
-    settings_text = copied_settings_path.read_text(encoding="utf-8")
-    updated_text = rewrite_settings_text(
-        settings_text,
-        config.settings_overrides,
-        source_label=str(config.settings_path),
-    )
-    copied_settings_path.write_text(updated_text, encoding="utf-8")
+    """Apply deployment overrides to copied settings files, if configured."""
+    for settings_path, overrides in _settings_overrides_by_path(config).items():
+        if not overrides:
+            continue
+        copied_settings_path = config.destination / settings_path
+        settings_text = copied_settings_path.read_text(encoding="utf-8")
+        updated_text = rewrite_settings_text(
+            settings_text,
+            overrides,
+            source_label=str(settings_path),
+        )
+        copied_settings_path.write_text(updated_text, encoding="utf-8")
 
 
 def rewrite_settings_text(
@@ -310,10 +277,10 @@ def vendor_trackflow(destination: Path) -> None:
     shutil.copytree(source, target, ignore=_ignore_python_cache)
 
 
-def write_launcher(config: PackageConfig) -> Path:
-    """Write the Windows launcher for the configured experiment."""
-    launcher_path = config.destination / config.launcher_name
-    launcher_path.write_text(_render_launcher(config), encoding="utf-8", newline="\r\n")
+def write_launcher(config: PackageConfig, launcher: LauncherConfig) -> Path:
+    """Write one Windows launcher for the configured project."""
+    launcher_path = config.destination / launcher.launcher_name
+    launcher_path.write_text(_render_launcher(launcher), encoding="utf-8", newline="\r\n")
     return launcher_path
 
 
@@ -326,14 +293,18 @@ def write_manifest(config: PackageConfig) -> Path:
         "source_project": str(config.project_root),
         "destination": str(config.destination),
         "config_path": str(config.config_path.relative_to(config.project_root)),
-        "experiment_name": config.experiment_name,
-        "settings_path": config.settings_path.as_posix(),
-        "entry_script": config.entry_script.as_posix(),
-        "launcher_name": config.launcher_name,
-        "python": config.python,
-        "shared_paths": [path.as_posix() for path in config.shared_paths],
-        "experiment_paths": [path.as_posix() for path in config.experiment_paths],
+        "project_name": config.project_name,
+        "paths": [path.as_posix() for path in config.paths],
         "settings_overrides": dict(config.settings_overrides),
+        "launchers": {
+            launcher.launcher_name: {
+                "settings": launcher.settings_path.as_posix(),
+                "entry_script": launcher.entry_script.as_posix(),
+                "python": launcher.python,
+                "settings_overrides": dict(launcher.settings_overrides),
+            }
+            for launcher in config.launchers
+        },
         "vendored_package": "trackflow",
     }
     manifest_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -356,10 +327,11 @@ def _read_static_config(config_path: Path) -> Dict[str, Any]:
     module = ast.parse(config_path.read_text(encoding="utf-8"), filename=str(config_path))
     values: Dict[str, Any] = {}
     allowed_names = {
-        "DESTINATION_ROOT",
-        "SHARED_PATHS",
-        "GLOBAL_SETTINGS_OVERRIDES",
-        "EXPERIMENTS",
+        "PROJECT_NAME",
+        "DESTINATION",
+        "PATHS",
+        "SETTINGS_OVERRIDES",
+        "LAUNCHERS",
     }
     for node in module.body:
         target_name = _single_assignment_name(node)
@@ -387,22 +359,13 @@ def _single_assignment_name(node: ast.AST) -> Optional[str]:
 
 def _resolve_destination(
     project_root: Path,
-    experiment_name: str,
     values: Mapping[str, Any],
-    experiment: Mapping[str, Any],
     destination: Optional[Union[Path, str]],
 ) -> Path:
-    """Resolve the destination path from CLI, experiment config, or root config."""
-    configured_destination = destination
-    if configured_destination is None:
-        configured_destination = experiment.get("destination")
-    if configured_destination is None:
-        destination_root = values.get("DESTINATION_ROOT")
-        if not destination_root:
-            raise ValueError(
-                'Define DESTINATION_ROOT, an experiment "destination", or pass --destination.'
-            )
-        configured_destination = Path(str(destination_root)) / experiment_name
+    """Resolve the destination path from CLI override or project config."""
+    configured_destination = destination if destination is not None else values.get("DESTINATION")
+    if not configured_destination:
+        raise ValueError("Define DESTINATION or pass --destination.")
 
     destination_path = Path(str(configured_destination)).expanduser()
     if not destination_path.is_absolute():
@@ -412,15 +375,43 @@ def _resolve_destination(
     return destination_path
 
 
-def _required_relative_path(
-    experiment: Mapping[str, Any],
-    field: str,
-    experiment_name: str,
-) -> Path:
-    """Read one required experiment path field."""
-    value = experiment.get(field)
+def _read_launchers(value: Any, project_overrides: Mapping[str, Any]) -> List[LauncherConfig]:
+    """Read launcher definitions from project config."""
+    if not isinstance(value, dict) or not value:
+        raise ValueError("LAUNCHERS must be a non-empty dictionary.")
+    launchers = []
+    for launcher_name, launcher_config in value.items():
+        launcher_name = str(launcher_name)
+        if Path(launcher_name).name != launcher_name or not launcher_name.lower().endswith(".bat"):
+            raise ValueError(f'Launcher "{launcher_name}" must be a .bat filename.')
+        if not isinstance(launcher_config, dict):
+            raise ValueError(f'LAUNCHERS["{launcher_name}"] must be a dictionary.')
+        settings_path = _required_relative_path(launcher_config, "settings", launcher_name)
+        entry_script = _required_relative_path(launcher_config, "entry_script", launcher_name)
+        python_path = launcher_config.get("python")
+        if python_path is not None:
+            python_path = str(python_path)
+        launcher_overrides = _read_overrides(
+            launcher_config.get("settings_overrides", {}),
+            f'LAUNCHERS["{launcher_name}"]["settings_overrides"]',
+        )
+        launchers.append(
+            LauncherConfig(
+                launcher_name=launcher_name,
+                settings_path=settings_path,
+                entry_script=entry_script,
+                python=python_path,
+                settings_overrides=launcher_overrides,
+            )
+        )
+    return launchers
+
+
+def _required_relative_path(config: Mapping[str, Any], field: str, label: str) -> Path:
+    """Read one required project-relative path field."""
+    value = config.get(field)
     if not value:
-        raise ValueError(f'EXPERIMENTS["{experiment_name}"] must define "{field}".')
+        raise ValueError(f'{label} must define "{field}".')
     path = Path(str(value))
     _validate_relative_project_path(path, field)
     return path
@@ -438,24 +429,31 @@ def _read_path_list(value: Any, label: str) -> List[Path]:
     return paths
 
 
-def _merge_overrides(
-    global_overrides: Any,
-    experiment_overrides: Any,
-    experiment_name: str,
-) -> Dict[str, Any]:
-    """Merge global and experiment settings overrides with experiment precedence."""
-    if not isinstance(global_overrides, dict):
-        raise ValueError("GLOBAL_SETTINGS_OVERRIDES must be a dictionary when provided.")
-    if not isinstance(experiment_overrides, dict):
-        raise ValueError(
-            f'EXPERIMENTS["{experiment_name}"]["settings_overrides"] must be a dictionary.'
-        )
-    overrides = dict(global_overrides)
-    overrides.update(experiment_overrides)
-    for dotted_key, value in overrides.items():
-        _split_override_key(str(dotted_key))
-        _format_literal_value(value, str(dotted_key))
-    return {str(key): value for key, value in overrides.items()}
+def _read_overrides(value: Any, label: str) -> Dict[str, Any]:
+    """Read settings overrides from static config."""
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a dictionary when provided.")
+    overrides = {str(key): override_value for key, override_value in value.items()}
+    for dotted_key, override_value in overrides.items():
+        _split_override_key(dotted_key)
+        _format_literal_value(override_value, dotted_key)
+    return overrides
+
+
+def _settings_overrides_by_path(config: PackageConfig) -> Dict[Path, Dict[str, Any]]:
+    """Return effective settings overrides grouped by copied settings file."""
+    grouped: Dict[Path, Dict[str, Any]] = {}
+    for launcher in config.launchers:
+        effective = dict(config.settings_overrides)
+        effective.update(launcher.settings_overrides)
+        current = grouped.setdefault(launcher.settings_path, {})
+        for key, value in effective.items():
+            if key in current and current[key] != value:
+                raise ValueError(
+                    f'Conflicting settings override for "{key}" in {launcher.settings_path}.'
+                )
+            current[key] = value
+    return grouped
 
 
 def _validate_relative_project_path(path: Path, label: str) -> None:
@@ -623,29 +621,26 @@ def _make_summary(
 ) -> PackageSummary:
     """Create the public summary object for a package run."""
     return PackageSummary(
-        experiment_name=config.experiment_name,
+        project_name=config.project_name,
         project_root=config.project_root,
         destination=config.destination,
         config_path=config.config_path,
-        settings_path=config.settings_path,
-        entry_script=config.entry_script,
-        launcher_path=config.destination / config.launcher_name,
+        launcher_paths=tuple(config.destination / launcher.launcher_name for launcher in config.launchers),
         manifest_path=config.destination / MANIFEST_NAME,
         checked_files=checked_files,
         copied_files=copied_files,
         skipped_files=skipped_files,
         removed_temp_files=removed_temp_files,
-        settings_overrides=config.settings_overrides,
         dry_run=dry_run,
     )
 
 
-def _render_launcher(config: PackageConfig) -> str:
+def _render_launcher(launcher: LauncherConfig) -> str:
     """Render the Windows launcher body."""
-    configured_python = config.python or ""
-    experiment_label = config.experiment_name
-    entry_script = _windows_path(config.entry_script)
-    entry_dir = _windows_path(config.entry_script.parent)
+    configured_python = launcher.python or ""
+    experiment_label = Path(launcher.launcher_name).stem
+    entry_script = _windows_path(launcher.entry_script)
+    entry_dir = _windows_path(launcher.entry_script.parent)
     return f"""@echo off
 setlocal
 

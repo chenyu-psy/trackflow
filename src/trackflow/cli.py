@@ -37,10 +37,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="copy a project for deployment and vendor trackflow",
     )
     package_parser.add_argument(
-        "experiment",
-        help="experiment name from packaging_config.py",
-    )
-    package_parser.add_argument(
         "--config",
         default=DEFAULT_CONFIG_NAME,
         help=f"path to project packaging config (default: {DEFAULT_CONFIG_NAME})",
@@ -61,23 +57,21 @@ def build_parser() -> argparse.ArgumentParser:
 def _run_package(args: argparse.Namespace) -> int:
     """Run ``trackflow package`` and print a concise summary."""
     summary = package_project(
-        args.experiment,
         config_path=Path(args.config),
         destination=args.destination,
         dry_run=bool(args.dry_run),
     )
     prefix = "[dry-run] " if summary.dry_run else ""
-    print(f"{prefix}Experiment: {summary.experiment_name}")
+    print(f"{prefix}Project: {summary.project_name}")
     print(f"{prefix}Project root: {summary.project_root}")
     print(f"{prefix}Packaging config: {summary.config_path}")
     print(f"{prefix}Destination: {summary.destination}")
-    print(f"{prefix}Settings: {summary.settings_path.as_posix()}")
-    print(f"{prefix}Entry script: {summary.entry_script.as_posix()}")
-    print(f"{prefix}Settings overrides: {len(summary.settings_overrides)}")
+    print(f"{prefix}Launchers: {len(summary.launcher_paths)}")
     print(f"{prefix}Checked files: {summary.checked_files}")
     if summary.dry_run:
         print(f"{prefix}Would vendor trackflow into: {summary.destination / 'trackflow'}")
-        print(f"{prefix}Would write launcher: {summary.launcher_path}")
+        for launcher_path in summary.launcher_paths:
+            print(f"{prefix}Would write launcher: {launcher_path}")
         print(f"{prefix}Would write manifest: {summary.manifest_path}")
         return 0
 
@@ -85,7 +79,8 @@ def _run_package(args: argparse.Namespace) -> int:
     print(f"Unchanged files skipped: {summary.skipped_files}")
     print(f"Removed macOS temp files: {summary.removed_temp_files}")
     print(f"Vendored trackflow into: {summary.destination / 'trackflow'}")
-    print(f"Wrote launcher: {summary.launcher_path}")
+    for launcher_path in summary.launcher_paths:
+        print(f"Wrote launcher: {launcher_path}")
     print(f"Wrote manifest: {summary.manifest_path}")
     return 0
 

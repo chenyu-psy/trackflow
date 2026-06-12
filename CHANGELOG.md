@@ -7,11 +7,11 @@ The release workflow reads the section matching `project.version` in
 ## 0.2.0
 
 - Added project-level deployment packaging with `packaging_config.py`.
-- Changed `trackflow package` to package one configured experiment by name.
-- Copied only configured experiment paths plus shared paths while respecting
-  `.gitignore`.
+- Changed `trackflow package` and `package_project(...)` to package one
+  configured project without an experiment argument.
+- Copied configured project paths while respecting `.gitignore`.
 - Vendored the current `trackflow` source into packaged projects and generated
-  Windows launchers for offline PsychoPy lab computers.
+  configured Windows launchers for offline PsychoPy lab computers.
 - Added opt-in deployment settings overrides for literal settings blocks such
   as `RUNTIME` and `MONITOR`, applied only to copied settings files.
 - Removed the design-stage per-settings `PACKAGE` block workflow.

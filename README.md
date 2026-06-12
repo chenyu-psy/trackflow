@@ -119,25 +119,25 @@ Use `trackflow package` when a PsychoPy lab computer should run the experiment
 without installing `trackflow`. Add a project-level `packaging_config.py` file:
 
 ```python
-DESTINATION_ROOT = r"D:\trackflow_lab_copies"
+PROJECT_NAME = "catload"
+DESTINATION = r"D:\trackflow_lab_copies\catload"
 
-SHARED_PATHS = [
+PATHS = [
     "assets",
     "src/common",
+    "src/exp1b",
 ]
 
-GLOBAL_SETTINGS_OVERRIDES = {
+SETTINGS_OVERRIDES = {
     "MONITOR.fullscr": True,
     "MONITOR.resolution": [1920, 1080],
 }
 
-EXPERIMENTS = {
-    "exp1b": {
+LAUNCHERS = {
+    "run_exp1b.bat": {
         "settings": "src/exp1b/settings.py",
         "entry_script": "src/exp1b/main.py",
-        "launcher_name": "run_exp1b.bat",
         "python": None,
-        "paths": ["src/exp1b"],
         "settings_overrides": {
             "RUNTIME.realtime_tracker": True,
             "RUNTIME.realtime_eeg": True,
@@ -149,13 +149,23 @@ EXPERIMENTS = {
 Then run:
 
 ```bash
-trackflow package exp1b
+trackflow package
 ```
 
-The command copies the selected experiment paths plus `SHARED_PATHS`, respects
-`.gitignore`, vendors the current `trackflow` source into the copied project,
-writes `trackflow_vendored.json`, and creates a Windows launcher such as
-`run_exp1b.bat`.
+The command copies the configured project `PATHS`, respects `.gitignore`,
+vendors the current `trackflow` source into the copied project, writes
+`trackflow_vendored.json`, and creates every Windows launcher listed in
+`LAUNCHERS`.
+
+The same config can also be runnable:
+
+```python
+if __name__ == "__main__":
+    from pathlib import Path
+    from trackflow.packaging import package_project
+
+    package_project(config_path=Path(__file__))
+```
 
 Deployment overrides are opt-in and only modify the copied settings file.
 Settings files should use literal top-level blocks such as:
