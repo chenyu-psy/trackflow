@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from .packaging import DEFAULT_CONFIG_NAME, package_project
+from .scaffolding import add_experiment, init_project
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -51,6 +52,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="show what would be packaged without writing files",
     )
     package_parser.set_defaults(func=_run_package)
+
+    init_parser = subparsers.add_parser(
+        "init",
+        help="initialize trackflow project folders",
+    )
+    init_parser.set_defaults(func=_run_init)
+
+    add_parser = subparsers.add_parser(
+        "add-experiment",
+        help="add a runnable experiment scaffold",
+    )
+    add_parser.add_argument(
+        "name",
+        nargs="?",
+        help="optional experiment folder name such as exp1",
+    )
+    add_parser.set_defaults(func=_run_add_experiment)
     return parser
 
 
@@ -83,6 +101,33 @@ def _run_package(args: argparse.Namespace) -> int:
         print(f"Wrote launcher: {launcher_path}")
     print(f"Wrote manifest: {summary.manifest_path}")
     return 0
+
+
+def _run_init(args: argparse.Namespace) -> int:
+    """Run ``trackflow init`` and print changed project paths."""
+    summary = init_project()
+    _print_scaffold_summary("Initialized trackflow project", summary)
+    return 0
+
+
+def _run_add_experiment(args: argparse.Namespace) -> int:
+    """Run ``trackflow add-experiment`` and print changed project paths."""
+    summary = add_experiment(args.name)
+    label = args.name or "flat experiment"
+    _print_scaffold_summary(f"Added {label}", summary)
+    return 0
+
+
+def _print_scaffold_summary(title: str, summary) -> None:
+    """Print a concise scaffold command summary."""
+    print(title)
+    print(f"Project root: {summary.project_root}")
+    for path in summary.created_paths:
+        print(f"Created: {path}")
+    for path in summary.updated_paths:
+        print(f"Updated: {path}")
+    for path in summary.skipped_paths:
+        print(f"Skipped existing: {path}")
 
 
 if __name__ == "__main__":
