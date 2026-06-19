@@ -14,11 +14,6 @@ MOUSE_TOKENS = {
     "mouse_right": 2,
 }
 
-DEFAULT_CALIBRATION_INTRO = (
-    "Sometimes a target will appear on the screen.\n\n"
-    "Look directly at each target until it moves."
-)
-DEFAULT_CALIBRATION_TRANSITION = "Calibration is complete.\n\nPress a key to continue."
 DEFAULT_REJECTION_PROMPT = (
     "There may be a problem with the eye tracker.\n\n"
     "Press C to calibrate, D for drift correction, or S to skip."
@@ -276,4 +271,3 @@ def _wait_for_continue(win: Any, continue_keys: Sequence[str] = ("space",)) -> s
             previous_buttons = buttons
 
         core.wait(0.01)
-

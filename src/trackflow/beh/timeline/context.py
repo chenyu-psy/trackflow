@@ -41,6 +41,12 @@ class TrackerRuntime:
             self.tracker.stop_recording()
         return None
 
+    def send_status(self, status: str) -> None:
+        """Send an EyeLink host status line when a tracker is configured."""
+        if self.tracker is not None and hasattr(self.tracker, "send_status"):
+            self.tracker.send_status(str(status))
+        return None
+
     def start_tracking(self) -> None:
         """Start realtime fixation tracking when a tracker is configured."""
         if self.tracker is not None and hasattr(self.tracker, "start_tracking"):
@@ -149,9 +155,9 @@ class RunContext:
         self.timeline.send_eeg(code)
         return None
 
-    def send_gaze(self, message: str) -> None:
-        """Send one EyeLink message through the timeline."""
-        self.timeline.send_gaze(message)
+    def send_gaze(self, message: Any = None, status: Any = None) -> None:
+        """Send EyeLink EDF messages and/or host status lines through the timeline."""
+        self.timeline.send_gaze(message=message, status=status)
         return None
 
     def break_trial(

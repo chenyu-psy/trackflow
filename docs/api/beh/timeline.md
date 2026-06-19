@@ -187,15 +187,18 @@ Send one EEG marker.
 
 ### `send_gaze(...)`
 
-Send one EyeLink message.
+Send one EyeLink message, one EyeLink host status line, or both.
 
 | Argument | Description |
 | --- | --- |
-| `message` | EyeLink message text. |
+| `message` | Optional EyeLink message text written to the EDF file. |
+| `status` | Optional status text shown on the EyeLink host display. |
 | Return | `None`. |
 
 ```python
 timeline.send(timeline.code["sample"], message="sample")
+timeline.send_gaze(message="sample_onset")
+timeline.send_gaze(status="Block 1 / Trial 12")
 ```
 
 Send helpers perform hardware side effects only. Experiment code must write any

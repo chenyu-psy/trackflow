@@ -17,15 +17,22 @@ def send_eeg(eeg: Optional[Any], state: Dict[str, Any], code: int) -> None:
     return None
 
 
-def send_gaze(gaze: Optional[Any], state: Dict[str, Any], message: str) -> None:
-    """Send one EyeLink message when a tracker is configured."""
-    message_text = str(message)
+def send_gaze(gaze: Optional[Any], state: Dict[str, Any], message: Any = None, status: Any = None) -> None:
+    """Send EyeLink EDF messages and/or host status lines when configured."""
+    if message is None and status is None:
+        raise ValueError("timeline.send_gaze(...) requires message, status, or both.")
     if gaze is None:
         return None
-    try:
-        _send_gaze_message(gaze, message_text)
-    except Exception as exc:
-        record_failure(state, f"EyeLink message failed: {exc}")
+    if message is not None:
+        try:
+            _send_gaze_message(gaze, str(message))
+        except Exception as exc:
+            record_failure(state, f"EyeLink message failed: {exc}")
+    if status is not None:
+        try:
+            _send_gaze_host_status(gaze, str(status))
+        except Exception as exc:
+            record_failure(state, f"EyeLink status failed: {exc}")
     return None
 
 
@@ -54,6 +61,14 @@ def _send_gaze_message(gaze: Any, message_text: str) -> None:
         gaze.send_message(message_text)
         return
     raise TypeError("gaze device must provide send_msg(text) or send_message(text).")
+
+
+def _send_gaze_host_status(gaze: Any, status_text: str) -> None:
+    """Send an EyeLink host status line using the tracker status method."""
+    if hasattr(gaze, "send_status") and callable(gaze.send_status):
+        gaze.send_status(status_text)
+        return
+    raise TypeError("gaze device must provide send_status(text).")
 
 
 __all__: Tuple[str, ...] = ("send_eeg", "send_gaze", "validate_numeric_code")

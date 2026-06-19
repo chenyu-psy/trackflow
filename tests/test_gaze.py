@@ -146,6 +146,32 @@ class GazeTests(unittest.TestCase):
         self.assertEqual(settings["foreground_color"], "#000000")
         self.assertEqual(settings["sample_rate"], 500)
 
+    def test_run_calibration_sends_settings_and_enters_calibration_only(self):
+        """run_calibration should not own participant instruction pages."""
+        tracker = object.__new__(gaze.ConnectedEyeLinker)
+        tracker.cfg = gaze.GazeConfig(calibration_type="HV9", calibration_area=(0.5, 0.5))
+        sent_settings = []
+        calibrate_calls = []
+
+        def send_tracking_settings(settings):
+            """Capture settings sent before calibration."""
+            sent_settings.append(settings)
+
+        def calibrate():
+            """Record calibration entry."""
+            calibrate_calls.append(True)
+
+        tracker.send_tracking_settings = send_tracking_settings
+        tracker.calibrate = calibrate
+
+        tracker.run_calibration(calibration_type="HV5", calibration_area=(0.35, 0.4))
+
+        self.assertEqual(len(sent_settings), 1)
+        self.assertEqual(sent_settings[0]["calibration_type"], "HV5")
+        self.assertEqual(sent_settings[0]["calibration_area_proportion"], (0.35, 0.4))
+        self.assertEqual(sent_settings[0]["validation_area_proportion"], (0.35, 0.4))
+        self.assertEqual(calibrate_calls, [True])
+
     def test_setup_tracker_debug_returns_debug_tracker_without_pylink(self):
         """Debug setup should not import or connect to EyeLink."""
         cfg = gaze.GazeConfig()
