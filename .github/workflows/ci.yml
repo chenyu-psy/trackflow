@@ -25,17 +25,16 @@ jobs:
       - name: Check main content is present in develop
         run: |
           git fetch origin main develop
-          git switch --detach origin/develop
-          if ! git merge --no-commit --no-ff origin/main; then
-            echo "origin/main cannot be cleanly merged into origin/develop."
+          if ! merged_tree="$(git merge-tree --write-tree origin/develop origin/main)"; then
+            echo "origin/main cannot be cleanly merged with origin/develop."
             echo "Sync file changes before opening a release PR."
             exit 1
           fi
-          if ! git diff --quiet || ! git diff --cached --quiet; then
+          develop_tree="$(git rev-parse origin/develop^{tree})"
+          if [ "$merged_tree" != "$develop_tree" ]; then
             echo "origin/main has file content that is not present in origin/develop."
             echo "Sync file changes before opening a release PR."
-            git diff --stat
-            git diff --cached --stat
+            git diff --stat origin/develop "$merged_tree"
             exit 1
           fi
 
