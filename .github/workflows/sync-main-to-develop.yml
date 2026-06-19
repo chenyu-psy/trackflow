@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   sync:
-    name: Open sync PR when main advances
+    name: Open content sync PR when main changes
     runs-on: ubuntu-latest
 
     steps:
@@ -21,7 +21,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check whether develop already matches main
+      - name: Check whether develop already matches main content
         id: sync_needed
         run: |
           git fetch origin main develop
@@ -68,4 +68,4 @@ jobs:
             --base develop \
             --head "$SYNC_BRANCH" \
             --title "Sync main back to develop" \
-            --body "Main has file changes that are not yet in develop. This PR is generated from develop with main's file diff applied, so it avoids conflicts caused only by squash-merge history."
+            --body "Main has file content changes that are not yet in develop. This PR applies main's file diff to develop. Content-identical commit SHA differences are expected under linear history and do not require sync."

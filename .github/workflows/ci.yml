@@ -12,7 +12,7 @@ on:
 
 jobs:
   branch-sync:
-    name: Main/develop sync guard
+    name: Main/develop content guard
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'develop'
 
@@ -22,12 +22,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check main is already included in develop
+      - name: Check main content is present in develop
         run: |
           git fetch origin main develop
-          if ! git merge-base --is-ancestor origin/main origin/develop; then
-            echo "origin/main has commits that are not in origin/develop."
-            echo "Sync main back into develop before opening a release PR."
+          if ! merged_tree="$(git merge-tree --write-tree origin/develop origin/main)"; then
+            echo "origin/main cannot be cleanly merged with origin/develop."
+            echo "Sync file changes before opening a release PR."
+            exit 1
+          fi
+          develop_tree="$(git rev-parse origin/develop^{tree})"
+          if [ "$merged_tree" != "$develop_tree" ]; then
+            echo "origin/main has file content that is not present in origin/develop."
+            echo "Sync file changes before opening a release PR."
+            git diff --stat origin/develop "$merged_tree"
             exit 1
           fi
 
