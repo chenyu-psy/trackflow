@@ -16,12 +16,8 @@ from .config import (
 from .display import _make_eyelink_display
 from .monitor import GazeBreakError, GazeMonitor
 from .runtime import (
-    DEFAULT_CALIBRATION_INTRO,
-    DEFAULT_CALIBRATION_TRANSITION,
-    _draw_text_page,
     _hex_to_rgb255,
     _load_pylink,
-    _wait_for_continue,
 )
 
 
@@ -207,11 +203,6 @@ class ConnectedEyeLinker:
         self,
         calibration_type: Optional[str] = None,
         calibration_area: Optional[Tuple[float, float]] = None,
-        intro: bool = True,
-        transition: bool = False,
-        continue_keys: Sequence[str] = ("space",),
-        intro_text: str = DEFAULT_CALIBRATION_INTRO,
-        transition_text: str = DEFAULT_CALIBRATION_TRANSITION,
     ) -> None:
         """Run EyeLink calibration with optional per-call settings.
 
@@ -223,17 +214,6 @@ class ConnectedEyeLinker:
         calibration_area : tuple[float, float] | None, optional
             Calibration area for this calibration only. Validation area is
             matched to the same values.
-        intro : bool, optional
-            Whether to show a pre-calibration instruction page.
-        transition : bool, optional
-            Whether to show a post-calibration transition page.
-        continue_keys : sequence[str], optional
-            PsychoPy key names plus optional mouse tokens accepted on text
-            pages.
-        intro_text : str, optional
-            Text shown before calibration.
-        transition_text : str, optional
-            Text shown after calibration.
 
         Returns
         -------
@@ -246,13 +226,7 @@ class ConnectedEyeLinker:
             calibration_area=calibration_area,
         )
         self.send_tracking_settings(settings)
-        if intro:
-            _draw_text_page(self.win, intro_text, text_color=self.text_color, bg_color=self.cfg.bg_color)
-            _wait_for_continue(self.win, continue_keys)
         self.calibrate()
-        if transition:
-            _draw_text_page(self.win, transition_text, text_color=self.text_color, bg_color=self.cfg.bg_color)
-            _wait_for_continue(self.win, continue_keys)
 
     def run_drift_correction(self, position: Optional[Tuple[int, int]] = None, setup: int = 1) -> None:
         """Run EyeLink drift correction.
@@ -625,16 +599,11 @@ class DebugEyeLinker:
         self,
         calibration_type: Optional[str] = None,
         calibration_area: Optional[Tuple[float, float]] = None,
-        intro: bool = True,
-        transition: bool = False,
-        continue_keys: Sequence[str] = ("space",),
-        intro_text: str = DEFAULT_CALIBRATION_INTRO,
-        transition_text: str = DEFAULT_CALIBRATION_TRANSITION,
     ) -> None:
         """Skip calibration in debug mode.
 
-        Parameters are accepted so debug and connected trackers can be swapped
-        without changing experiment flow code.
+        Calibration settings are accepted so debug and connected trackers can
+        be swapped without changing experiment flow code.
         """
         return None
 

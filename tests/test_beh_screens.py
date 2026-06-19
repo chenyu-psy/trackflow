@@ -67,6 +67,7 @@ class FakeGazeTracker:
         """Initialize recording call counters and optional monitor."""
         self.start_recording_calls = 0
         self.stop_recording_calls = 0
+        self.statuses = []
         self.monitor = monitor
         self.make_monitor_calls = 0
 
@@ -77,6 +78,10 @@ class FakeGazeTracker:
     def stop_recording(self):
         """Record one stop-recording request."""
         self.stop_recording_calls += 1
+
+    def send_status(self, status):
+        """Record one EyeLink host status request."""
+        self.statuses.append(str(status))
 
     def make_monitor(self):
         """Return the configured monitor for realtime fixation checks."""
@@ -218,10 +223,15 @@ class FakeGazeSender:
     def __init__(self):
         """Initialize message log."""
         self.messages = []
+        self.statuses = []
 
     def send_msg(self, text):
         """Record one EyeLink message."""
         self.messages.append(str(text))
+
+    def send_status(self, text):
+        """Record one EyeLink host status line."""
+        self.statuses.append(str(text))
 
 
 class BehaviorScreenTests(unittest.TestCase):
@@ -471,6 +481,7 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertNotIn("messages", row)
         self.assertEqual(eeg_sender.sent, [21])
         self.assertEqual(gaze_sender.messages, ["sample"])
+        self.assertEqual(gaze_sender.statuses, [])
 
     def test_condition_specific_code_lookup_uses_screen_data(self):
         """Hooks can choose numeric codes from ctx.code and inherited data."""
@@ -515,7 +526,7 @@ class BehaviorScreenTests(unittest.TestCase):
         """ctx.send_gaze should send EyeLink text without mutating row records."""
         gaze_sender = FakeGazeSender()
 
-        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, on_load=lambda ctx: ctx.send_gaze("sample"))
+        screen = beh_timeline.Screen(stimuli=[FakeStim()], duration=0.1, on_load=lambda ctx: ctx.send_gaze(message="sample"))
         timeline = beh.timeline.setup_timeline(win=FakeWindow(), tracker=gaze_sender)
         core = FakeCore([0.0, 0.0, 0.2])
         event = FakeEvent(key_batches=[[]])
@@ -525,6 +536,27 @@ class BehaviorScreenTests(unittest.TestCase):
                 timeline.run(screen)
 
         self.assertEqual(gaze_sender.messages, ["sample"])
+        self.assertEqual(gaze_sender.statuses, [])
+
+    def test_ctx_send_gaze_sends_status_only(self):
+        """ctx.send_gaze should send EyeLink host status without row records."""
+        gaze_sender = FakeGazeSender()
+
+        screen = beh_timeline.Screen(
+            stimuli=[FakeStim()],
+            duration=0.1,
+            on_load=lambda ctx: ctx.send_gaze(status="Block 1 / Trial 12"),
+        )
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), tracker=gaze_sender)
+        core = FakeCore([0.0, 0.0, 0.2])
+        event = FakeEvent(key_batches=[[]])
+
+        with mock.patch.object(beh_timeline_screen, "_load_psychopy_core", return_value=core):
+            with mock.patch.object(beh_timeline_screen, "_load_psychopy_event", return_value=event):
+                timeline.run(screen)
+
+        self.assertEqual(gaze_sender.messages, [])
+        self.assertEqual(gaze_sender.statuses, ["Block 1 / Trial 12"])
 
     def test_send_failure_sets_pause_state_without_row_record(self):
         """Failed sends should set pause state without adding row records."""
@@ -554,6 +586,66 @@ class BehaviorScreenTests(unittest.TestCase):
         self.assertEqual(timeline.records, [])
         self.assertEqual(eeg_sender.sent, [99])
         self.assertEqual(gaze_sender.messages, ["block_start"])
+        self.assertEqual(gaze_sender.statuses, [])
+
+    def test_timeline_send_gaze_supports_status_without_creating_rows(self):
+        """timeline.send_gaze should update host status without rows."""
+        gaze_sender = FakeGazeSender()
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), tracker=gaze_sender)
+
+        result = timeline.send_gaze(status="Block 1 / Trial 12")
+
+        self.assertIsNone(result)
+        self.assertEqual(timeline.records, [])
+        self.assertEqual(gaze_sender.messages, [])
+        self.assertEqual(gaze_sender.statuses, ["Block 1 / Trial 12"])
+
+    def test_timeline_send_gaze_supports_message_without_creating_rows(self):
+        """timeline.send_gaze should write EDF messages without rows."""
+        gaze_sender = FakeGazeSender()
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), tracker=gaze_sender)
+
+        result = timeline.send_gaze(message="sample")
+
+        self.assertIsNone(result)
+        self.assertEqual(timeline.records, [])
+        self.assertEqual(gaze_sender.messages, ["sample"])
+        self.assertEqual(gaze_sender.statuses, [])
+
+    def test_timeline_send_gaze_supports_message_and_status_in_order(self):
+        """timeline.send_gaze should send EDF message before host status."""
+        calls = []
+
+        class OrderedGazeSender(FakeGazeSender):
+            """EyeLink stand-in that records cross-method call order."""
+
+            def send_msg(self, text):
+                """Record one ordered EyeLink message."""
+                calls.append(("message", str(text)))
+                super().send_msg(text)
+
+            def send_status(self, text):
+                """Record one ordered EyeLink host status line."""
+                calls.append(("status", str(text)))
+                super().send_status(text)
+
+        gaze_sender = OrderedGazeSender()
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), tracker=gaze_sender)
+
+        result = timeline.send_gaze(message="sample", status="Block 1 / Trial 12")
+
+        self.assertIsNone(result)
+        self.assertEqual(timeline.records, [])
+        self.assertEqual(calls, [("message", "sample"), ("status", "Block 1 / Trial 12")])
+        self.assertEqual(gaze_sender.messages, ["sample"])
+        self.assertEqual(gaze_sender.statuses, ["Block 1 / Trial 12"])
+
+    def test_timeline_send_gaze_requires_message_or_status(self):
+        """timeline.send_gaze should reject empty sends."""
+        timeline = beh.timeline.setup_timeline(win=FakeWindow(), tracker=FakeGazeSender())
+
+        with self.assertRaisesRegex(ValueError, "requires message, status, or both"):
+            timeline.send_gaze()
 
     def test_send_without_configured_devices_leaves_row_empty(self):
         """ctx.send should not add records when no sender is configured."""
@@ -903,6 +995,7 @@ class BehaviorScreenTests(unittest.TestCase):
         def on_start(ctx, data):
             """Exercise the tracker facade from a screen hook."""
             ctx.tracker.start_recording()
+            ctx.tracker.send_status("Block 1 / Trial 12")
             ctx.tracker.start_tracking()
             data["fixation_ok"] = ctx.tracker.check_fixation()
             ctx.tracker.stop_tracking()
@@ -923,6 +1016,7 @@ class BehaviorScreenTests(unittest.TestCase):
 
         self.assertEqual(tracker.start_recording_calls, 1)
         self.assertEqual(tracker.stop_recording_calls, 1)
+        self.assertEqual(tracker.statuses, ["Block 1 / Trial 12"])
         self.assertEqual(tracker.make_monitor_calls, 1)
         self.assertEqual(monitor.start_tracking_calls, 1)
         self.assertEqual(monitor.check_fixation_calls, 1)
@@ -935,6 +1029,7 @@ class BehaviorScreenTests(unittest.TestCase):
 
         self.assertIsNone(runtime.start_recording())
         self.assertIsNone(runtime.stop_recording())
+        self.assertIsNone(runtime.send_status("ready"))
         self.assertIsNone(runtime.start_tracking())
         self.assertFalse(runtime.check_fixation())
         self.assertIsNone(runtime.stop_tracking())

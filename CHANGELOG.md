@@ -4,6 +4,17 @@ Release notes are required before merging a release pull request into `main`.
 The release workflow reads the section matching `project.version` in
 `pyproject.toml`.
 
+## 0.3.2
+
+- Added EyeLink host status support through
+  `timeline.send_gaze(status=...)`.
+- Kept EDF messages on `timeline.send_gaze(message=...)` and preserved
+  `timeline.send(..., message=...)` behavior.
+- Simplified `run_calibration(...)` by removing built-in instruction and
+  transition pages; experiment scripts now own any calibration-related
+  instruction screens.
+- Updated the Behavior Timeline and Gaze API reference documentation.
+
 ## 0.3.1
 
 - Reworked API reference pages into compact, hand-authored sections with
