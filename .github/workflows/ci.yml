@@ -22,12 +22,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check main and develop content match
+      - name: Check main content is present in develop
         run: |
           git fetch origin main develop
-          if ! git diff --quiet origin/main origin/develop; then
-            echo "origin/main and origin/develop have content differences."
+          git switch --detach origin/develop
+          if ! git merge --no-commit --no-ff origin/main; then
+            echo "origin/main cannot be cleanly merged into origin/develop."
             echo "Sync file changes before opening a release PR."
+            exit 1
+          fi
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "origin/main has file content that is not present in origin/develop."
+            echo "Sync file changes before opening a release PR."
+            git diff --stat
+            git diff --cached --stat
             exit 1
           fi
 
