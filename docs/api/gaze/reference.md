@@ -57,7 +57,8 @@ Methods used before or between task trials.
 
 ### `run_calibration(...)`
 
-Apply optional per-call calibration settings and run calibration.
+Apply optional per-call calibration settings and open the EyeLink calibration
+menu.
 
 | Argument | Description |
 | --- | --- |
@@ -200,8 +201,10 @@ Send a raw EyeLink host command.
 tracker.send_msg("sample_onset")
 ```
 
-Inside timeline hooks, prefer `ctx.send_gaze(...)` or
-`ctx.send(..., message=...)` when the tracker is attached to a timeline.
+When the tracker is attached to a timeline, prefer
+`timeline.send_gaze(status=...)` for EyeLink host status lines. Use
+`ctx.send_gaze(message=...)` or `ctx.send(..., message=...)` for EDF messages
+that should be synchronized with timeline events.
 
 ## Gaze errors
 

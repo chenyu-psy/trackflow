@@ -425,7 +425,7 @@ class Timeline:
         if code is not None:
             self.send_eeg(code)
         if message is not None:
-            self.send_gaze(str(message))
+            self.send_gaze(message=str(message))
         return None
 
     def send_eeg(self, code: int) -> None:
@@ -433,9 +433,9 @@ class Timeline:
         send_eeg(self.eeg, self.state, code)
         return None
 
-    def send_gaze(self, message: str) -> None:
-        """Send one EyeLink message through the configured tracker."""
-        send_gaze(self.tracker, self.state, str(message))
+    def send_gaze(self, message: Any = None, status: Any = None) -> None:
+        """Send EyeLink EDF messages and/or host status lines."""
+        send_gaze(self.tracker, self.state, message=message, status=status)
         return None
 
     def get_last_data(self, kind: str = "raw", unit: str = "screen") -> DataCollection:
