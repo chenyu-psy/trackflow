@@ -4,6 +4,7 @@ import unittest
 from unittest import mock
 
 from trackflow import gaze
+from trackflow.beh.timeline.context import TrackerRuntime
 from trackflow.gaze import monitor as gaze_monitor
 from trackflow.gaze import tracker as gaze_tracker
 
@@ -240,6 +241,38 @@ class GazeTests(unittest.TestCase):
         self.assertEqual(monitor.rejection_streak, 1)
         self.assertEqual(tracker.stop_recording_calls, 1)
 
+    def test_monitor_reports_consecutive_rejection_streak(self):
+        """Repeated gaze breaks should accumulate in the public streak API."""
+        tracker = FakeTracker(samples=[((80, 50), None), ((50, 80), None)])
+        monitor = gaze_monitor.GazeMonitor(
+            tracker=tracker,
+            win=FakeWindow(),
+            pix_radius=10,
+        )
+        monitor.start_tracking()
+        for _ in range(2):
+            with self.assertRaises(gaze.GazeBreakError):
+                monitor.check_fixation()
+
+        self.assertEqual(monitor.get_rejection_streak(), 2)
+
+    def test_monitor_reset_rejections_clears_streak_and_error(self):
+        """Resetting rejection state should clear both count and last error."""
+        tracker = FakeTracker(samples=[((80, 50), None)])
+        monitor = gaze_monitor.GazeMonitor(
+            tracker=tracker,
+            win=FakeWindow(),
+            pix_radius=10,
+        )
+        monitor.start_tracking()
+        with self.assertRaises(gaze.GazeBreakError):
+            monitor.check_fixation()
+
+        monitor.reset_rejections()
+
+        self.assertEqual(monitor.get_rejection_streak(), 0)
+        self.assertIsNone(monitor.last_error)
+
     def test_wait_checks_until_duration_passes(self):
         """wait should repeatedly check gaze while advancing through duration."""
         clock = FakeClock()
@@ -306,6 +339,59 @@ class GazeTests(unittest.TestCase):
         monitor.check_fixation.assert_called_once_with()
         monitor.stop_tracking.assert_called_once_with()
         self.assertTrue(result)
+
+    def test_tracker_wrappers_forward_rejection_state_helpers(self):
+        """Tracker wrappers should expose the internal monitor rejection state."""
+        tracker = gaze.setup_tracker(FakeWindow(), cfg=gaze.GazeConfig(), edf_name="S01.edf", debug=True)
+        monitor = mock.Mock()
+        monitor.get_rejection_streak.return_value = 4
+
+        with mock.patch.object(tracker, "make_monitor", return_value=monitor):
+            self.assertEqual(tracker.get_rejection_streak(), 4)
+            tracker.reset_rejections()
+
+        monitor.get_rejection_streak.assert_called_once_with()
+        monitor.reset_rejections.assert_called_once_with()
+
+    def test_connected_tracker_forwards_rejection_state_helpers(self):
+        """Connected tracker wrapper should expose internal monitor rejection state."""
+        tracker = object.__new__(gaze.ConnectedEyeLinker)
+        monitor = mock.Mock()
+        monitor.get_rejection_streak.return_value = 5
+        tracker._gaze_monitor = monitor
+
+        self.assertEqual(tracker.get_rejection_streak(), 5)
+        tracker.reset_rejections()
+
+        monitor.get_rejection_streak.assert_called_once_with()
+        monitor.reset_rejections.assert_called_once_with()
+
+    def test_tracker_runtime_facade_forwards_rejection_state_helpers(self):
+        """Screen-hook tracker facade should expose rejection streak helpers."""
+        tracker = mock.Mock()
+        tracker.get_rejection_streak.return_value = 3
+        runtime = TrackerRuntime(tracker=tracker)
+
+        self.assertEqual(runtime.get_rejection_streak(), 3)
+        runtime.reset_rejections()
+
+        tracker.get_rejection_streak.assert_called_once_with()
+        tracker.reset_rejections.assert_called_once_with()
+
+    def test_tracker_runtime_facade_uses_monitor_fallback(self):
+        """TrackerRuntime should use a created monitor when tracker lacks helpers."""
+        monitor = mock.Mock()
+        monitor.get_rejection_streak.return_value = 2
+        tracker = mock.Mock(spec=["make_monitor"])
+        tracker.make_monitor.return_value = monitor
+        runtime = TrackerRuntime(tracker=tracker)
+
+        self.assertEqual(runtime.get_rejection_streak(), 2)
+        runtime.reset_rejections()
+
+        tracker.make_monitor.assert_called_once_with()
+        monitor.get_rejection_streak.assert_called_once_with()
+        monitor.reset_rejections.assert_called_once_with()
 
     def test_gaze_break_feedback_uses_neutral_text_and_red_marker(self):
         """Feedback should reserve red for the measured gaze marker."""

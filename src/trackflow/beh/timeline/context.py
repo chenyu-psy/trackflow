@@ -76,6 +76,25 @@ class TrackerRuntime:
             return False
         return bool(monitor.check_fixation())
 
+    def get_rejection_streak(self) -> int:
+        """Return consecutive gaze rejection events when a tracker is configured."""
+        if self.tracker is not None and hasattr(self.tracker, "get_rejection_streak"):
+            return int(self.tracker.get_rejection_streak())
+        monitor = self._get_monitor()
+        if monitor is None or not hasattr(monitor, "get_rejection_streak"):
+            return 0
+        return int(monitor.get_rejection_streak())
+
+    def reset_rejections(self) -> None:
+        """Reset consecutive gaze rejection state when a tracker is configured."""
+        if self.tracker is not None and hasattr(self.tracker, "reset_rejections"):
+            self.tracker.reset_rejections()
+            return None
+        monitor = self._get_monitor()
+        if monitor is not None and hasattr(monitor, "reset_rejections"):
+            monitor.reset_rejections()
+        return None
+
     def _get_monitor(self) -> Any:
         """Return a tracker-created monitor when the tracker supports one."""
         if self._monitor is not None:

@@ -310,6 +310,15 @@ class ConnectedEyeLinker:
         self._get_gaze_monitor().show_feedback(error=error, continue_keys=continue_keys)
         return None
 
+    def get_rejection_streak(self) -> int:
+        """Return consecutive gaze rejection events from the internal monitor."""
+        return int(self._get_gaze_monitor().get_rejection_streak())
+
+    def reset_rejections(self) -> None:
+        """Reset consecutive gaze rejection state on the internal monitor."""
+        self._get_gaze_monitor().reset_rejections()
+        return None
+
     def close_edf(self) -> None:
         """Close the EDF file on the EyeLink host.
 
@@ -693,6 +702,15 @@ class DebugEyeLinker:
     def show_feedback(self, error: Optional[GazeBreakError] = None, continue_keys: Sequence[str] = ("space",)) -> None:
         """Show gaze-break feedback through the internal monitor."""
         self._get_gaze_monitor().show_feedback(error=error, continue_keys=continue_keys)
+        return None
+
+    def get_rejection_streak(self) -> int:
+        """Return consecutive gaze rejection events from the internal monitor."""
+        return int(self._get_gaze_monitor().get_rejection_streak())
+
+    def reset_rejections(self) -> None:
+        """Reset consecutive gaze rejection state on the internal monitor."""
+        self._get_gaze_monitor().reset_rejections()
         return None
 
     def close(self, save_as: Optional[str] = None) -> None:

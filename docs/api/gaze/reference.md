@@ -163,8 +163,30 @@ except gaze.GazeBreakError as err:
     tracker.show_feedback(err)
 ```
 
-Fixation checks report breaks only. Retry, exclusion, replacement, and saved
-row fields remain experiment-script decisions.
+### `get_rejection_streak(...)`
+
+Return the number of consecutive realtime gaze breaks observed since the last
+reset. This method is available on tracker wrappers and on the timeline hook
+facade as `ctx.tracker.get_rejection_streak()`.
+
+| Return | Description |
+| --- | --- |
+| `int` | Consecutive gaze rejection count. |
+
+### `reset_rejections(...)`
+
+Clear the consecutive gaze rejection count and the last gaze-break error. This
+method is available on tracker wrappers and on the timeline hook facade as
+`ctx.tracker.reset_rejections()`.
+
+| Return | Description |
+| --- | --- |
+| `None` | Rejection state is cleared. |
+
+Fixation checks report breaks and maintain the streak state. Experiment scripts
+can use the rejection streak helpers for workflows such as retry, exclusion,
+drift correction, researcher intervention, trial replacement, or saved row
+fields.
 
 ## EyeLink messages
 
