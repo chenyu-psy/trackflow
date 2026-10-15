@@ -152,6 +152,10 @@ trial = timeline.make_trial(
 `data_format` does not replace raw data saving. It creates a separate summary
 row from the raw screen rows that were already produced.
 
+When a timeline restarts with an existing summary CSV, trackflow reads the
+stored header and appends rows without writing a second header. The appended
+row schema must still match the original header.
+
 ## Read completed rows during a session
 
 Use `get_data(...)` to inspect saved rows while the session is running:

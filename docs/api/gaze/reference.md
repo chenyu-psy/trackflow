@@ -108,12 +108,84 @@ Finalize recording, close the connection, and transfer the EDF.
 | Argument | Description |
 | --- | --- |
 | `save_as` | Optional EDF filename for transfer. |
+| `overwrite` | When `True`, allow replacement of an existing destination. Defaults to `False`. |
 | Return | `None`. |
 
 ```python
 tracker.start_recording()
 tracker.stop_recording()
 tracker.close(save_as="S01.edf")
+```
+
+### `finalize_edf(...)`
+
+Stop recording and close the current Host EDF without disconnecting. This is
+useful when experiment code must transfer more than one registered EDF before
+closing the EyeLink connection.
+
+### `transfer_edf(...)`
+
+Transfer one named Host EDF to a local destination while keeping the tracker
+connection open.
+
+| Argument | Description |
+| --- | --- |
+| `save_as` | Optional local destination. Defaults to the Host filename. |
+| `source_name` | Optional Host EDF filename. Defaults to the current EDF. |
+| `overwrite` | Whether an existing local destination may be replaced. Defaults to `False`. |
+| Return | Size of the transferred local file in bytes. |
+
+### `close_connection(...)`
+
+Close the EyeLink connection and graphics after all required transfers finish.
+
+## Metadata-backed EDF files
+
+These helpers let experiment and analysis code share one ordered, portable EDF
+registry. Registry filenames are relative to the participant directory.
+
+### `register_edf_file(...)`
+
+Register a pending run in a meta-state dictionary before opening its Host EDF.
+
+### `mark_edf_transferred(...)`
+
+Mark a registered local EDF as transferred and store its size and SHA-256.
+
+### `get_eye_tracking_files(...)`
+
+Return EDF paths in `run_id` order. Only entries marked `transferred` whose
+local size and SHA-256 still match are returned. Metadata without an
+`eye_tracking` registry falls back to the legacy `<subject_dir>.edf` filename.
+
+```python
+from trackflow import gaze
+
+edf_files = gaze.get_eye_tracking_files(
+    meta_path="data/sub01/sub01_meta.json",
+    subject_dir="data/sub01",
+)
+```
+
+The optional registry has this shape and does not change the surrounding
+trackflow metadata version:
+
+```json
+{
+  "eye_tracking": {
+    "schema_version": 1,
+    "files": [
+      {
+        "run_id": 1,
+        "filename": "sub01_r001.edf",
+        "host_filename": "P001R001.edf",
+        "status": "transferred",
+        "size_bytes": 123456,
+        "sha256": "..."
+      }
+    ]
+  }
+}
 ```
 
 ## Realtime fixation checks
