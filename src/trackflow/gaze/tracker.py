@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from pathlib import Path
 from typing import Any, Callable, Optional, Sequence, Tuple
 
 from .config import (
@@ -310,6 +311,15 @@ class ConnectedEyeLinker:
         self._get_gaze_monitor().show_feedback(error=error, continue_keys=continue_keys)
         return None
 
+    def get_rejection_streak(self) -> int:
+        """Return consecutive gaze rejection events from the internal monitor."""
+        return int(self._get_gaze_monitor().get_rejection_streak())
+
+    def reset_rejections(self) -> None:
+        """Reset consecutive gaze rejection state on the internal monitor."""
+        self._get_gaze_monitor().reset_rejections()
+        return None
+
     def close_edf(self) -> None:
         """Close the EDF file on the EyeLink host.
 
@@ -321,31 +331,62 @@ class ConnectedEyeLinker:
         self.tracker.closeDataFile()
         self.edf_open = False
 
-    def transfer_edf(self, save_as: Optional[str] = None) -> None:
-        """Transfer the EDF from the EyeLink host to the PsychoPy computer.
+    def transfer_edf(
+        self,
+        save_as: Optional[str] = None,
+        *,
+        source_name: Optional[str] = None,
+        overwrite: bool = False,
+    ) -> int:
+        """Transfer one EDF from the EyeLink host to the PsychoPy computer.
 
         Parameters
         ----------
         save_as : str | None, optional
             Destination EDF filename. Defaults to the original EDF filename.
+        source_name : str | None, optional
+            EyeLink host filename to transfer. Defaults to the current EDF.
+        overwrite : bool, optional
+            Whether an existing local destination may be replaced.
 
         Returns
         -------
-        None
-            Receives the EDF and prints a short confirmation.
+        int
+            Number of bytes in the transferred local file.
         """
-        filename = os.fspath(save_as) if save_as is not None else self.edf_name
-        if not filename.endswith(".edf"):
-            raise ValueError("save_as must include the .edf extension.")
+        source = str(source_name or self.edf_name)
+        _validate_edf_name(source)
+        filename = os.fspath(save_as) if save_as is not None else source
+        destination = Path(filename)
+        if destination.exists() and not overwrite:
+            raise FileExistsError(f"EDF destination already exists: {destination}")
         old_stdout = sys.stdout
         devnull_handle = open(os.devnull, "w")
         sys.stdout = devnull_handle
         try:
-            self.tracker.receiveDataFile(self.edf_name, filename)
+            result = self.tracker.receiveDataFile(source, filename)
         finally:
             sys.stdout = old_stdout
             devnull_handle.close()
+        if isinstance(result, (int, float)) and int(result) <= 0:
+            raise RuntimeError(f"EyeLink EDF transfer failed for {source!r} with status {result}.")
+        if not destination.is_file() or destination.stat().st_size <= 0:
+            raise RuntimeError(f"EyeLink EDF transfer did not create a non-empty file: {destination}")
+        size_bytes = int(destination.stat().st_size)
         print(f"{filename} has been transferred successfully.")
+        return size_bytes
+
+    def finalize_edf(self) -> None:
+        """Stop recording and close the current host EDF without disconnecting."""
+        try:
+            self.stop_recording()
+        except Exception:
+            pass
+        self.set_offline_mode()
+        time.sleep(0.5)
+        if self.edf_open:
+            self.close_edf()
+        time.sleep(0.5)
 
     def setup_tracker(self) -> None:
         """Open the EyeLink tracker setup menu.
@@ -500,7 +541,7 @@ class ConnectedEyeLinker:
         self.tracker.close()
         _load_pylink().closeGraphics()
 
-    def close(self, save_as: Optional[str] = None) -> None:
+    def close(self, save_as: Optional[str] = None, *, overwrite: bool = False) -> None:
         """Finalize EyeLink recording and transfer the EDF file.
 
         Parameters
@@ -508,6 +549,8 @@ class ConnectedEyeLinker:
         save_as : str | os.PathLike | None, optional
             Destination EDF path on the PsychoPy/presenter computer. Defaults
             to the short EyeLink host EDF filename.
+        overwrite : bool, optional
+            Whether an existing local destination may be replaced.
 
         Returns
         -------
@@ -517,15 +560,8 @@ class ConnectedEyeLinker:
             close the EyeLink connection.
         """
         try:
-            try:
-                self.stop_recording()
-            except Exception:
-                pass
-            self.set_offline_mode()
-            time.sleep(0.5)
-            self.close_edf()
-            time.sleep(0.5)
-            self.transfer_edf(save_as=save_as)
+            self.finalize_edf()
+            self.transfer_edf(save_as=save_as, overwrite=overwrite)
         finally:
             self.close_connection()
 
@@ -583,8 +619,19 @@ class DebugEyeLinker:
         """Mark the debug EDF state as closed."""
         self.edf_open = False
 
-    def transfer_edf(self, save_as: Optional[str] = None) -> None:
+    def transfer_edf(
+        self,
+        save_as: Optional[str] = None,
+        *,
+        source_name: Optional[str] = None,
+        overwrite: bool = False,
+    ) -> int:
         """No-op EDF transfer for debug mode."""
+        return 0
+
+    def finalize_edf(self) -> None:
+        """Mark the debug EDF closed without disconnecting."""
+        self.edf_open = False
         return None
 
     def setup_tracker(self) -> None:
@@ -695,7 +742,16 @@ class DebugEyeLinker:
         self._get_gaze_monitor().show_feedback(error=error, continue_keys=continue_keys)
         return None
 
-    def close(self, save_as: Optional[str] = None) -> None:
+    def get_rejection_streak(self) -> int:
+        """Return consecutive gaze rejection events from the internal monitor."""
+        return int(self._get_gaze_monitor().get_rejection_streak())
+
+    def reset_rejections(self) -> None:
+        """Reset consecutive gaze rejection state on the internal monitor."""
+        self._get_gaze_monitor().reset_rejections()
+        return None
+
+    def close(self, save_as: Optional[str] = None, *, overwrite: bool = False) -> None:
         """No-op close for debug mode."""
         return None
 

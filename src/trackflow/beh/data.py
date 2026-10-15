@@ -114,7 +114,10 @@ class SummaryWriter:
     def __init__(self, path: Any, fieldnames: Optional[List[str]] = None) -> None:
         """Create a summary CSV writer."""
         self.path = Path(path)
-        self.fieldnames = list(fieldnames) if fieldnames is not None else None
+        if fieldnames is not None:
+            self.fieldnames = list(fieldnames)
+        else:
+            self.fieldnames = _read_summary_header(self.path)
 
     def append(self, row: Dict[str, Any]) -> None:
         """Validate and append one summary row.
@@ -131,11 +134,10 @@ class SummaryWriter:
         """
         row = validate_summary_row(row)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        write_header = not self.path.exists() or self.path.stat().st_size == 0
         if self.fieldnames is None:
             self.fieldnames = list(row.keys())
-            write_header = True
         else:
-            write_header = not self.path.exists()
             extra = [key for key in row.keys() if key not in self.fieldnames]
             if extra:
                 raise ValueError(
@@ -149,6 +151,17 @@ class SummaryWriter:
             if write_header:
                 writer.writeheader()
             writer.writerow(out_row)
+
+
+def _read_summary_header(path: Path) -> Optional[List[str]]:
+    """Return an existing non-empty summary CSV header when available."""
+    if not path.exists() or path.stat().st_size == 0:
+        return None
+    with path.open("r", newline="", encoding="utf-8") as f:
+        header = next(csv.reader(f), None)
+    if not header:
+        raise ValueError("existing summary CSV does not contain a header row.")
+    return [str(field) for field in header]
 
 
 def append_jsonl(path: Any, row: Dict[str, Any]) -> None:

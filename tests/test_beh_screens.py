@@ -1426,6 +1426,35 @@ class BehaviorScreenTests(unittest.TestCase):
 
         self.assertEqual(beh_recovery.remaining_plan_rows(state), [{"plan_id": "exp_0002"}])
 
+    def test_summary_writer_reuses_existing_header_after_restart(self):
+        """A restarted writer should append without inserting another header."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary_path = f"{tmpdir}/summary.csv"
+            beh.data.SummaryWriter(summary_path).append({"trial_id": 1, "response": "z"})
+            beh.data.SummaryWriter(summary_path).append({"trial_id": 2, "response": "slash"})
+
+            with open(summary_path, "r", encoding="utf-8", newline="") as f:
+                lines = f.read().splitlines()
+            with open(summary_path, "r", encoding="utf-8", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(lines.count("trial_id,response"), 1)
+        self.assertEqual([row["trial_id"] for row in rows], ["1", "2"])
+
+    def test_restarted_summary_writer_rejects_new_columns_before_append(self):
+        """An existing CSV schema should still reject new summary columns."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary_path = f"{tmpdir}/summary.csv"
+            beh.data.SummaryWriter(summary_path).append({"trial_id": 1})
+            original = open(summary_path, "r", encoding="utf-8").read()
+
+            with self.assertRaisesRegex(ValueError, "new columns"):
+                beh.data.SummaryWriter(summary_path).append({"trial_id": 2, "extra": True})
+
+            current = open(summary_path, "r", encoding="utf-8").read()
+
+        self.assertEqual(current, original)
+
     def test_timeline_writes_raw_summary_and_completion_state(self):
         """Accepted trials should write raw JSONL, summary CSV, and meta completion."""
         with tempfile.TemporaryDirectory() as tmpdir:

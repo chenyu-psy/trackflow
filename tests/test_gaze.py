@@ -1,9 +1,14 @@
 """Tests for the public gaze helper API."""
 
+import json
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from trackflow import gaze
+from trackflow.beh.timeline.context import TrackerRuntime
 from trackflow.gaze import monitor as gaze_monitor
 from trackflow.gaze import tracker as gaze_tracker
 
@@ -195,6 +200,125 @@ class GazeTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 gaze.setup_tracker(FakeWindow(), cfg=gaze.GazeConfig(), edf_name="S01.edf", debug=False)
 
+    def test_eye_tracking_metadata_returns_verified_files_in_run_order(self):
+        """Metadata readers should expose only verified EDFs in run order."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            subject_dir = Path(tmpdir) / "sub01"
+            subject_dir.mkdir()
+            state = {"version": 1}
+            gaze.register_edf_file(
+                state,
+                run_id=2,
+                filename="sub01_r002.edf",
+                host_filename="P001R002.edf",
+            )
+            gaze.register_edf_file(
+                state,
+                run_id=1,
+                filename="sub01_r001.edf",
+                host_filename="P001R001.edf",
+            )
+            for run_id in (1, 2):
+                path = subject_dir / f"sub01_r{run_id:03d}.edf"
+                path.write_bytes(f"edf-{run_id}".encode("ascii"))
+                gaze.mark_edf_transferred(state, run_id, path)
+            meta_path = subject_dir / "sub01_meta.json"
+            meta_path.write_text(json.dumps(state), encoding="utf-8")
+
+            files = gaze.get_eye_tracking_files(meta_path, subject_dir)
+
+        self.assertEqual([path.name for path in files], ["sub01_r001.edf", "sub01_r002.edf"])
+
+    def test_eye_tracking_metadata_excludes_missing_or_changed_files(self):
+        """Metadata readers should omit files that no longer match their digest."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            subject_dir = Path(tmpdir) / "sub01"
+            subject_dir.mkdir()
+            state = {"version": 1}
+            gaze.register_edf_file(
+                state,
+                run_id=1,
+                filename="sub01_r001.edf",
+                host_filename="P001R001.edf",
+            )
+            path = subject_dir / "sub01_r001.edf"
+            path.write_bytes(b"original")
+            gaze.mark_edf_transferred(state, 1, path)
+            path.write_bytes(b"changed")
+            meta_path = subject_dir / "sub01_meta.json"
+            meta_path.write_text(json.dumps(state), encoding="utf-8")
+
+            files = gaze.get_eye_tracking_files(meta_path, subject_dir)
+
+        self.assertEqual(files, [])
+
+    def test_eye_tracking_metadata_remains_portable_after_directory_copy(self):
+        """Relative registry filenames should resolve in a copied subject directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            subject_dir = Path(tmpdir) / "original" / "sub01"
+            subject_dir.mkdir(parents=True)
+            state = {"version": 1}
+            gaze.register_edf_file(
+                state,
+                run_id=1,
+                filename="sub01_r001.edf",
+                host_filename="P001R001.edf",
+            )
+            edf_path = subject_dir / "sub01_r001.edf"
+            edf_path.write_bytes(b"portable-edf")
+            gaze.mark_edf_transferred(state, 1, edf_path)
+            meta_path = subject_dir / "sub01_meta.json"
+            meta_path.write_text(json.dumps(state), encoding="utf-8")
+
+            copied_dir = Path(tmpdir) / "copied" / "sub01"
+            shutil.copytree(subject_dir, copied_dir)
+            files = gaze.get_eye_tracking_files(copied_dir / meta_path.name, copied_dir)
+
+        self.assertEqual([path.parent for path in files], [copied_dir])
+        self.assertEqual(files[0].name, "sub01_r001.edf")
+
+    def test_eye_tracking_metadata_falls_back_to_legacy_subject_edf(self):
+        """Old metadata without a registry should find the legacy EDF filename."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            subject_dir = Path(tmpdir) / "sub01"
+            subject_dir.mkdir()
+            legacy = subject_dir / "sub01.edf"
+            legacy.write_bytes(b"legacy")
+            meta_path = subject_dir / "sub01_meta.json"
+            meta_path.write_text(json.dumps({"version": 1}), encoding="utf-8")
+
+            files = gaze.get_eye_tracking_files(meta_path, subject_dir)
+
+        self.assertEqual(files, [legacy])
+
+    def test_transfer_edf_accepts_registered_host_source_and_protects_destination(self):
+        """Transfers should support historical host names without local overwrite."""
+        calls = []
+
+        class TransferHandle:
+            """Write deterministic bytes for one simulated Host transfer."""
+
+            def receiveDataFile(self, source, destination):
+                """Record the source and create the requested local file."""
+                calls.append((source, destination))
+                Path(destination).write_bytes(b"edf-data")
+                return len(b"edf-data")
+
+        tracker = object.__new__(gaze.ConnectedEyeLinker)
+        tracker.edf_name = "P001R002.edf"
+        tracker.tracker = TransferHandle()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            destination = Path(tmpdir) / ".sub01_r001.edf.part"
+            size = tracker.transfer_edf(
+                destination,
+                source_name="P001R001.edf",
+            )
+            with self.assertRaises(FileExistsError):
+                tracker.transfer_edf(destination, source_name="P001R001.edf")
+
+        self.assertEqual(size, len(b"edf-data"))
+        self.assertEqual(calls, [("P001R001.edf", str(destination))])
+
     def test_continue_key_split_allows_mouse_tokens(self):
         """Continue-key parsing should keep PsychoPy key names unchanged."""
         keys, buttons = gaze._split_continue_keys(("space", "mouse_left", "return", "mouse_right"))
@@ -239,6 +363,38 @@ class GazeTests(unittest.TestCase):
         self.assertEqual(err_ctx.exception.pos, (30.0, 0.0))
         self.assertEqual(monitor.rejection_streak, 1)
         self.assertEqual(tracker.stop_recording_calls, 1)
+
+    def test_monitor_reports_consecutive_rejection_streak(self):
+        """Repeated gaze breaks should accumulate in the public streak API."""
+        tracker = FakeTracker(samples=[((80, 50), None), ((50, 80), None)])
+        monitor = gaze_monitor.GazeMonitor(
+            tracker=tracker,
+            win=FakeWindow(),
+            pix_radius=10,
+        )
+        monitor.start_tracking()
+        for _ in range(2):
+            with self.assertRaises(gaze.GazeBreakError):
+                monitor.check_fixation()
+
+        self.assertEqual(monitor.get_rejection_streak(), 2)
+
+    def test_monitor_reset_rejections_clears_streak_and_error(self):
+        """Resetting rejection state should clear both count and last error."""
+        tracker = FakeTracker(samples=[((80, 50), None)])
+        monitor = gaze_monitor.GazeMonitor(
+            tracker=tracker,
+            win=FakeWindow(),
+            pix_radius=10,
+        )
+        monitor.start_tracking()
+        with self.assertRaises(gaze.GazeBreakError):
+            monitor.check_fixation()
+
+        monitor.reset_rejections()
+
+        self.assertEqual(monitor.get_rejection_streak(), 0)
+        self.assertIsNone(monitor.last_error)
 
     def test_wait_checks_until_duration_passes(self):
         """wait should repeatedly check gaze while advancing through duration."""
@@ -306,6 +462,59 @@ class GazeTests(unittest.TestCase):
         monitor.check_fixation.assert_called_once_with()
         monitor.stop_tracking.assert_called_once_with()
         self.assertTrue(result)
+
+    def test_tracker_wrappers_forward_rejection_state_helpers(self):
+        """Tracker wrappers should expose the internal monitor rejection state."""
+        tracker = gaze.setup_tracker(FakeWindow(), cfg=gaze.GazeConfig(), edf_name="S01.edf", debug=True)
+        monitor = mock.Mock()
+        monitor.get_rejection_streak.return_value = 4
+
+        with mock.patch.object(tracker, "make_monitor", return_value=monitor):
+            self.assertEqual(tracker.get_rejection_streak(), 4)
+            tracker.reset_rejections()
+
+        monitor.get_rejection_streak.assert_called_once_with()
+        monitor.reset_rejections.assert_called_once_with()
+
+    def test_connected_tracker_forwards_rejection_state_helpers(self):
+        """Connected tracker wrapper should expose internal monitor rejection state."""
+        tracker = object.__new__(gaze.ConnectedEyeLinker)
+        monitor = mock.Mock()
+        monitor.get_rejection_streak.return_value = 5
+        tracker._gaze_monitor = monitor
+
+        self.assertEqual(tracker.get_rejection_streak(), 5)
+        tracker.reset_rejections()
+
+        monitor.get_rejection_streak.assert_called_once_with()
+        monitor.reset_rejections.assert_called_once_with()
+
+    def test_tracker_runtime_facade_forwards_rejection_state_helpers(self):
+        """Screen-hook tracker facade should expose rejection streak helpers."""
+        tracker = mock.Mock()
+        tracker.get_rejection_streak.return_value = 3
+        runtime = TrackerRuntime(tracker=tracker)
+
+        self.assertEqual(runtime.get_rejection_streak(), 3)
+        runtime.reset_rejections()
+
+        tracker.get_rejection_streak.assert_called_once_with()
+        tracker.reset_rejections.assert_called_once_with()
+
+    def test_tracker_runtime_facade_uses_monitor_fallback(self):
+        """TrackerRuntime should use a created monitor when tracker lacks helpers."""
+        monitor = mock.Mock()
+        monitor.get_rejection_streak.return_value = 2
+        tracker = mock.Mock(spec=["make_monitor"])
+        tracker.make_monitor.return_value = monitor
+        runtime = TrackerRuntime(tracker=tracker)
+
+        self.assertEqual(runtime.get_rejection_streak(), 2)
+        runtime.reset_rejections()
+
+        tracker.make_monitor.assert_called_once_with()
+        monitor.get_rejection_streak.assert_called_once_with()
+        monitor.reset_rejections.assert_called_once_with()
 
     def test_gaze_break_feedback_uses_neutral_text_and_red_marker(self):
         """Feedback should reserve red for the measured gaze marker."""

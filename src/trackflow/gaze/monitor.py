@@ -305,6 +305,16 @@ class GazeMonitor:
         self.win.flip()
         _wait_for_continue(self.win, continue_keys)
 
+    def get_rejection_streak(self) -> int:
+        """Return the number of consecutive gaze rejection events.
+
+        Returns
+        -------
+        int
+            Current count of gaze breaks since the last reset.
+        """
+        return int(self.rejection_streak)
+
     def reset_rejections(self) -> None:
         """Reset consecutive gaze rejection state.
 

@@ -4,6 +4,20 @@ Release notes are required before merging a release pull request into `main`.
 The release workflow reads the section matching `project.version` in
 `pyproject.toml`.
 
+## 0.3.3
+
+- Added public gaze rejection streak helpers on realtime monitors, tracker
+  wrappers, and timeline tracker contexts.
+- Documented that experiment scripts can use the streak state for workflows such
+  as drift correction, researcher intervention, or trial replacement.
+- Made summary CSV append restart-safe by reusing the existing header instead
+  of writing another header in the middle of the file.
+- Extended EDF transfer with explicit Host source selection and overwrite
+  control so experiments can retrieve multiple files before disconnecting.
+- Added an optional metadata EDF registry plus `get_eye_tracking_files(...)`
+  for ordered, size- and SHA-256-verified discovery with legacy single-EDF
+  fallback.
+
 ## 0.3.2
 
 - Added EyeLink host status support through
